@@ -5,6 +5,7 @@ import { fetchContainers, startContainer, stopContainer, restartContainer, remov
 import { Box, Play, Square, RefreshCw, Trash2, Terminal, X, Loader2, MonitorUp } from "lucide-react";
 import { useState } from "react";
 import { ContainerTerminal } from "./ContainerTerminal";
+import { DraggableWindow } from "@/components/ui/DraggableWindow";
 
 interface ContainersPanelProps {
   selectedNode: string | null;
@@ -49,60 +50,50 @@ export function ContainersPanel({ selectedNode }: ContainersPanelProps) {
         </div>
       </div>
 
-      {/* Container Table */}
-      <div className="card overflow-hidden p-0">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Container</th>
-              <th>Image</th>
-              <th>Status</th>
-              <th>Node</th>
-              <th>Ports</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {containers.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="text-center py-12">
-                  <Box className="mx-auto text-muted mb-4" size={48} />
-                  <p className="text-lg font-medium">No containers found</p>
-                  <p className="text-sm text-muted mt-2">
-                    Deploy a stack to get started
-                  </p>
-                </td>
-              </tr>
-            ) : (
-              containers.map((container: any) => (
-                <ContainerRow 
-                  key={container.id} 
-                  container={container} 
-                  onRefetch={refetch}
-                  onShowLogs={(id, name, logs) => setLogsModal({ id, name, logs })}
-                  onOpenShell={(id, name) => setShellModal({ id, name })}
-                />
-              ))
-            )}
-          </tbody>
-        </table>
+      {/* Container List */}
+      <div className="space-y-3">
+        {/* Header - Hidden on mobile, visible on desktop */}
+        <div className="hidden md:grid grid-cols-12 gap-4 px-4 py-2 text-xs font-semibold text-muted uppercase tracking-wider">
+          <div className="col-span-4">Container</div>
+          <div className="col-span-2">Image</div>
+          <div className="col-span-1">Status</div>
+          <div className="col-span-2">Node</div>
+          <div className="col-span-3 text-right">Actions</div>
+        </div>
+
+        {containers.length === 0 ? (
+          <div className="card text-center py-12">
+            <Box className="mx-auto text-muted mb-4" size={48} />
+            <p className="text-lg font-medium">No containers found</p>
+            <p className="text-sm text-muted mt-2">
+              Deploy a stack to get started
+            </p>
+          </div>
+        ) : (
+          containers.map((container: any) => (
+            <ContainerCard 
+              key={container.id} 
+              container={container} 
+              onRefetch={refetch}
+              onShowLogs={(id, name, logs) => setLogsModal({ id, name, logs })}
+              onOpenShell={(id, name) => setShellModal({ id, name })}
+            />
+          ))
+        )}
       </div>
 
       {/* Logs Modal */}
       {logsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setLogsModal(null)}>
-          <div className="bg-surface border border-border rounded-xl w-full max-w-4xl max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <h3 className="font-semibold">Logs: {logsModal.name}</h3>
-              <button onClick={() => setLogsModal(null)} className="btn-ghost p-1.5 rounded">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-4 overflow-auto max-h-[60vh]">
-              <pre className="text-xs font-mono text-secondary whitespace-pre-wrap">{logsModal.logs || "No logs available"}</pre>
-            </div>
+        <DraggableWindow
+          title={`Logs: ${logsModal.name}`}
+          initialWidth={800}
+          initialHeight={600}
+          onClose={() => setLogsModal(null)}
+        >
+          <div className="p-4 overflow-auto h-full text-xs font-mono text-secondary whitespace-pre-wrap">
+            {logsModal.logs || "No logs available"}
           </div>
-        </div>
+        </DraggableWindow>
       )}
 
       {/* Shell Terminal Modal */}
@@ -117,7 +108,7 @@ export function ContainersPanel({ selectedNode }: ContainersPanelProps) {
   );
 }
 
-function ContainerRow({ 
+function ContainerCard({ 
   container, 
   onRefetch,
   onShowLogs,
@@ -158,77 +149,96 @@ function ContainerRow({
     setLoading(null);
   };
 
+  const isRunning = container.state === "running";
+
   return (
-    <tr>
-      <td>
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-surface-hover flex items-center justify-center">
-            <Box size={16} className="text-blue-400" />
+    <div className={`card p-0 overflow-hidden transition-all duration-300 group
+      ${isRunning 
+        ? "hover:border-blue-500/50 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)]" 
+        : "border-red-500/20 bg-red-500/5 hover:border-red-500/50 hover:shadow-[0_0_20px_rgba(239,68,68,0.1)]"
+      }`}
+    >
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 items-center">
+        
+        {/* Name & ID */}
+        <div className="col-span-1 md:col-span-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-surface-hover flex items-center justify-center shrink-0">
+            <Box size={20} className="text-blue-400 group-hover:text-blue-300 transition-colors" />
           </div>
-          <div>
-            <p className="font-medium">{container.name}</p>
-            <p className="text-xs text-muted">{container.id?.slice(0, 12)}</p>
+          <div className="min-w-0">
+            <p className="font-medium truncate text-base">{container.name}</p>
+            <div className="flex items-center gap-2 text-xs text-muted">
+              <span className="font-mono bg-surface-hover px-1.5 py-0.5 rounded">{container.id?.slice(0, 12)}</span>
+            </div>
           </div>
         </div>
-      </td>
-      <td>
-        <span className="text-sm">{container.image}</span>
-      </td>
-      <td>
-        <span className={`badge ${container.state === "running" ? "badge-success" : "badge-danger"}`}>
-          {container.state}
-        </span>
-      </td>
-      <td>
-        <span className="text-sm text-muted">{container.node || "--"}</span>
-      </td>
-      <td>
-        <span className="text-sm font-mono text-muted">
-          {container.ports?.join(", ") || "--"}
-        </span>
-      </td>
-      <td>
-        <div className="flex items-center gap-1">
+
+        {/* Image */}
+        <div className="col-span-1 md:col-span-2">
+           <span className="text-sm text-secondary truncate block" title={container.image}>
+            {container.image}
+           </span>
+        </div>
+
+        {/* Status */}
+        <div className="col-span-1 md:col-span-1">
+          <span className={`badge ${container.state === "running" ? "badge-success" : "badge-danger"}`}>
+            {container.state}
+          </span>
+        </div>
+
+        {/* Node */}
+        <div className="col-span-1 md:col-span-2">
+          <div className="flex items-center gap-1.5 text-sm text-muted">
+            <MonitorUp size={14} />
+            <span>{container.node || "--"}</span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="col-span-1 md:col-span-3 flex items-center justify-start md:justify-end gap-1">
           <button 
             onClick={() => handleAction("start", startContainer)}
             disabled={loading !== null}
-            className="btn-ghost p-1.5 rounded text-green-400 hover:bg-green-500/10 disabled:opacity-50" 
+            className="btn-ghost p-2 rounded-lg text-green-400 hover:bg-green-500/10 disabled:opacity-50 transition-colors" 
             title="Start"
           >
-            {loading === "start" ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+            {loading === "start" ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
           </button>
           <button 
             onClick={() => handleAction("stop", stopContainer)}
             disabled={loading !== null}
-            className="btn-ghost p-1.5 rounded text-yellow-400 hover:bg-yellow-500/10 disabled:opacity-50" 
+            className="btn-ghost p-2 rounded-lg text-yellow-400 hover:bg-yellow-500/10 disabled:opacity-50 transition-colors" 
             title="Stop"
           >
-            {loading === "stop" ? <Loader2 size={14} className="animate-spin" /> : <Square size={14} />}
+            {loading === "stop" ? <Loader2 size={16} className="animate-spin" /> : <Square size={16} />}
           </button>
           <button 
             onClick={() => handleAction("restart", restartContainer)}
             disabled={loading !== null}
-            className="btn-ghost p-1.5 rounded text-blue-400 hover:bg-blue-500/10 disabled:opacity-50" 
+            className="btn-ghost p-2 rounded-lg text-blue-400 hover:bg-blue-500/10 disabled:opacity-50 transition-colors" 
             title="Restart"
           >
-            {loading === "restart" ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {loading === "restart" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
           </button>
+          <div className="w-px h-6 bg-border mx-1" />
           <button 
             onClick={handleLogs}
             disabled={loading !== null}
-            className="btn-ghost p-1.5 rounded text-purple-400 hover:bg-purple-500/10 disabled:opacity-50" 
+            className="btn-ghost p-2 rounded-lg text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 transition-colors" 
             title="Logs"
           >
-            {loading === "logs" ? <Loader2 size={14} className="animate-spin" /> : <Terminal size={14} />}
+            {loading === "logs" ? <Loader2 size={16} className="animate-spin" /> : <Terminal size={16} />}
           </button>
           <button 
             onClick={() => onOpenShell(container.id, container.name)}
             disabled={loading !== null || container.state !== "running"}
-            className="btn-ghost p-1.5 rounded text-cyan-400 hover:bg-cyan-500/10 disabled:opacity-50" 
+            className="btn-ghost p-2 rounded-lg text-cyan-400 hover:bg-cyan-500/10 disabled:opacity-50 transition-colors" 
             title="Shell"
           >
-            <MonitorUp size={14} />
+            <MonitorUp size={16} />
           </button>
+          <div className="w-px h-6 bg-border mx-1" />
           <button 
             onClick={() => {
               if (confirm(`Are you sure you want to remove ${container.name}?`)) {
@@ -236,13 +246,21 @@ function ContainerRow({
               }
             }}
             disabled={loading !== null}
-            className="btn-ghost p-1.5 rounded text-red-400 hover:bg-red-500/10 disabled:opacity-50" 
+            className="btn-ghost p-2 rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-50 transition-colors" 
             title="Remove"
           >
-            {loading === "remove" ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            {loading === "remove" ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
           </button>
         </div>
-      </td>
-    </tr>
+      </div>
+      
+      {/* Ports Footer - Optional, visible if ports exist */}
+      {container.ports && container.ports.length > 0 && (
+        <div className="bg-surface-hover/50 px-4 py-2 border-t border-border flex items-center gap-2 text-xs font-mono text-muted">
+          <span className="text-secondary">Ports:</span>
+          {container.ports.join(", ")}
+        </div>
+      )}
+    </div>
   );
 }

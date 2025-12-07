@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Outfit } from "next/font/google";
 import "@/styles/globals.css";
 import "@xterm/xterm/css/xterm.css";
 import { Providers } from "@/components/Providers";
 
-const inter = Inter({ subsets: ["latin"] });
+const outfit = Outfit({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "MetalHive - Docker Fleet Orchestrator",
@@ -21,7 +21,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={inter.className}>
+      <body className={outfit.className}>
+        <div className="texture-overlay" />
         <Providers>{children}</Providers>
       </body>
     </html>
