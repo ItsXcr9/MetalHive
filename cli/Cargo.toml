@@ -1,0 +1,51 @@
+[package]
+name = "mhive"
+version = "0.1.0"
+edition = "2021"
+authors = ["Xcr9 <team@xcr9.site>"]
+description = "MetalHive CLI - Command-line interface for fleet management"
+license = "Apache-2.0"
+repository = "https://github.com/xcr9/metalhive"
+
+[[bin]]
+name = "mhive"
+path = "src/main.rs"
+
+[dependencies]
+# CLI framework
+clap = { version = "4.5", features = ["derive", "env", "color"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Terminal UI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Output formatting
+tabled = "0.17"
+colored = "2.1"
+
+# Configuration
+dirs = "5.0"
+toml = "0.8"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Async runtime (for streaming)
+tokio = { version = "1.41", features = ["rt-multi-thread", "macros"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

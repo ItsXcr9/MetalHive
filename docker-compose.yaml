@@ -1,0 +1,210 @@
+# =============================================================================
+# MetalHive Docker Compose - Development Environment
+# =============================================================================
+# Start with: docker compose up -d
+# Stop with:  docker compose down
+# Logs:       docker compose logs -f [service]
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Infrastructure Services
+  # ===========================================================================
+  
+  nats:
+    image: nats:2.10-alpine
+    container_name: metalhive-nats
+    command: 
+      - "--config=/etc/nats/nats-server.conf"
+      - "--jetstream"
+    ports:
+      - "4223:4222"   # Client connections (changed to 4223)
+      - "8223:8222"   # HTTP monitoring (changed to 8223)
+    volumes:
+      - ./infra/nats/nats-server.conf:/etc/nats/nats-server.conf:ro
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    container_name: metalhive-clickhouse
+    ports:
+      - "8124:8123"   # HTTP interface (changed to 8124)
+      - "9001:9000"   # Native protocol (changed to 9001)
+    volumes:
+      - ./infra/clickhouse/config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
+      - ./infra/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - clickhouse-data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: metalhive
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: metalhive-dragonfly
+    ports:
+      - "6379:6379"
+    volumes:
+      - dragonfly-data:/data
+    command: 
+      - "--maxmemory=512mb"
+      - "--proactor_threads=2"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ===========================================================================
+  # MetalHive Services
+  # ===========================================================================
+
+  controller:
+    build:
+      context: ./controller
+      dockerfile: Dockerfile
+    container_name: metalhive-controller
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/metalhive/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - METALHIVE_SERVER_HOST=0.0.0.0
+      - METALHIVE_SERVER_PORT=8080
+      - METALHIVE_NATS_URL=nats://nats:4222
+      - METALHIVE_CLICKHOUSE_URL=clickhouse:9000
+      - METALHIVE_DRAGONFLY_ADDR=dragonfly:6379
+      - METALHIVE_LOG_LEVEL=debug
+    depends_on:
+      nats:
+        condition: service_healthy
+      dragonfly:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  ai:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    container_name: metalhive-ai
+    ports:
+      - "8082:8081"   # Changed to 8082 to avoid conflict
+    environment:
+      - METALMIND_HOST=0.0.0.0
+      - METALMIND_PORT=8081
+      - METALMIND_GEMINI_API_KEY=AIzaSyAZOhNPlY5N0M-1yetYR0grC_UN7oNx1Es
+      - METALMIND_GEMINI_MODEL=gemini-2.5-flash-lite
+      - METALMIND_NATS_URL=nats://nats:4222
+      - METALMIND_CLICKHOUSE_URL=http://clickhouse:8123
+      - METALMIND_REDIS_URL=redis://dragonfly:6379
+      - METALMIND_LOG_LEVEL=debug
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://65.109.200.75:8080
+        - NEXT_PUBLIC_WS_URL=ws://65.109.200.75:8080
+    container_name: metalhive-ui
+    ports:
+      - "3002:3000"   # Changed to 3002 to avoid conflict
+    environment:
+      - NEXT_PUBLIC_API_URL=http://65.109.200.75:8080
+      - NEXT_PUBLIC_WS_URL=ws://65.109.200.75:8080
+    depends_on:
+      - controller
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Development Agent (simulates a node)
+  # ===========================================================================
+
+  agent-dev:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: metalhive-agent-dev
+    privileged: true
+    environment:
+      - AGENT_ID=dev-node-01
+      - AGENT_LABELS=env=development,role=dev
+      - CONTROLLER_URL=http://controller:8080
+      - NATS_URL=nats://nats:4222
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - MDNS_ENABLED=false
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - controller
+      - nats
+    profiles:
+      - agent
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Optional: Caddy Reverse Proxy
+  # ===========================================================================
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: metalhive-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - controller
+      - ui
+    profiles:
+      - production
+    restart: unless-stopped
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+volumes:
+  nats-data:
+    name: metalhive-nats-data
+  clickhouse-data:
+    name: metalhive-clickhouse-data
+  dragonfly-data:
+    name: metalhive-dragonfly-data
+  caddy-data:
+    name: metalhive-caddy-data
+  caddy-config:
+    name: metalhive-caddy-config
+
+# =============================================================================
+# Networks
+# =============================================================================
+
+networks:
+  default:
+    name: metalhive-network

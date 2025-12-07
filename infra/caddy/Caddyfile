@@ -1,0 +1,57 @@
+# MetalHive Caddyfile
+# ====================
+# Reverse proxy configuration for production
+
+{
+    # Global options
+    email {$ACME_EMAIL:admin@example.com}
+    
+    # Development mode (disable HTTPS)
+    # auto_https off
+}
+
+# Main domain
+{$DOMAIN:metalhive.local} {
+    # API routes -> Controller
+    handle /api/* {
+        reverse_proxy controller:8080
+    }
+    
+    # WebSocket routes -> Controller
+    handle /ws/* {
+        reverse_proxy controller:8080
+    }
+    
+    # AI routes -> MetalMind
+    handle /ai/* {
+        uri strip_prefix /ai
+        reverse_proxy ai:8081
+    }
+    
+    # Everything else -> UI
+    handle {
+        reverse_proxy ui:3000
+    }
+    
+    # Security headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+    
+    # Logging
+    log {
+        output stdout
+        format json
+    }
+    
+    # Compression
+    encode gzip zstd
+}
+
+# Health check endpoint (for load balancers)
+:8080 {
+    respond /health "OK" 200
+}

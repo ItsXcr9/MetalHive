@@ -1,0 +1,46 @@
+<!-- ClickHouse Custom Configuration for MetalHive -->
+<clickhouse>
+    <!-- Logging -->
+    <logger>
+        <level>information</level>
+        <console>1</console>
+    </logger>
+
+    <!-- Listen on all interfaces -->
+    <listen_host>0.0.0.0</listen_host>
+
+    <!-- HTTP interface settings -->
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <!-- Skip user-level settings check -->
+    <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+
+
+    <!-- Compression -->
+    <compression>
+        <case>
+            <min_part_size>10000000000</min_part_size>
+            <min_part_size_ratio>0.01</min_part_size_ratio>
+            <method>zstd</method>
+        </case>
+    </compression>
+
+    <!-- MergeTree settings -->
+    <merge_tree>
+        <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+        <parts_to_delay_insert>150</parts_to_delay_insert>
+        <parts_to_throw_insert>300</parts_to_throw_insert>
+    </merge_tree>
+
+    <!-- Time zone -->
+    <timezone>UTC</timezone>
+
+    <!-- Query log (for debugging) -->
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_log>
+</clickhouse>

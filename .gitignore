@@ -1,0 +1,51 @@
+# MetalHive
+PROPOSAL_2026.md
+
+# Dependencies
+node_modules/
+.pnpm-store/
+target/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.eggs/
+*.egg-info/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+bin/
+*.whl
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Docker
+docker-compose.override.yml
