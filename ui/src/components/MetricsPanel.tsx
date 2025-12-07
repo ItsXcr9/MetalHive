@@ -1,10 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { fetchMetrics } from "@/lib/api";
 import { 
-  LineChart, 
-  Line, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -14,38 +11,121 @@ import {
   Area 
 } from "recharts";
 
+// Use AncientReport API for metrics (via MetalHive controller proxy)
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
+
 interface MetricsPanelProps {
   selectedNode: string | null;
   compact?: boolean;
 }
 
+interface MetricDataPoint {
+  timestamp: string;
+  value: number;
+  time?: string;
+}
+
+async function fetchMetricData(metricType: string, period: string = "1h"): Promise<MetricDataPoint[]> {
+  try {
+    const response = await fetch(`${METRICS_API}/api/metrics/${metricType}?period=${period}`);
+    if (!response.ok) {
+      console.warn(`Failed to fetch ${metricType} metrics`);
+      return [];
+    }
+    const data = await response.json();
+    const rawData = data.data || data || [];
+    
+    // Transform the data based on metric type
+    return rawData.map((point: Record<string, unknown>) => {
+      let value = 0;
+      
+      if (metricType === "network") {
+        // Network has sent/received in KB/s, convert to MB/s
+        const sent = (point.sent as number) || 0;
+        const received = (point.received as number) || 0;
+        value = (sent + received) / 1024; // Convert KB/s to MB/s
+      } else if (metricType === "disk") {
+        // Disk has reads/writes in KB/s, convert to MB/s
+        const reads = (point.reads as number) || 0;
+        const writes = (point.writes as number) || 0;
+        value = (reads + writes) / 1024; // Convert KB/s to MB/s
+      } else {
+        // CPU and Memory have value directly
+        value = (point.value as number) || 0;
+      }
+      
+      return {
+        timestamp: point.timestamp as string,
+        value,
+        time: new Date(point.timestamp as string).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      };
+    });
+  } catch (error) {
+    console.warn(`Error fetching ${metricType} metrics:`, error);
+    return [];
+  }
+}
+
 export function MetricsPanel({ selectedNode, compact = false }: MetricsPanelProps) {
-  // Placeholder data - would come from API
-  const cpuData = generateMetricData("cpu");
-  const memoryData = generateMetricData("memory");
-  const networkData = generateMetricData("network");
-  const diskData = generateMetricData("disk");
+  // Fetch real metrics from AncientReport
+  const { data: cpuData = [] } = useQuery({
+    queryKey: ["metrics", "cpu"],
+    queryFn: () => fetchMetricData("cpu"),
+    refetchInterval: 30000, // Refresh every 30 seconds
+    staleTime: 15000,
+  });
+
+  const { data: memoryData = [] } = useQuery({
+    queryKey: ["metrics", "memory"],
+    queryFn: () => fetchMetricData("memory"),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  const { data: networkData = [] } = useQuery({
+    queryKey: ["metrics", "network"],
+    queryFn: () => fetchMetricData("network"),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  const { data: diskData = [] } = useQuery({
+    queryKey: ["metrics", "disk"],
+    queryFn: () => fetchMetricData("disk"),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  // Use real data if available, otherwise show empty state
+  const hasData = cpuData.length > 0;
 
   if (compact) {
     return (
       <div className="w-full h-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={cpuData}>
-            <defs>
-              <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="#3b82f6"
-              fillOpacity={1}
-              fill="url(#colorCpu)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {hasData ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={cpuData}>
+              <defs>
+                <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="#3b82f6"
+                fillOpacity={1}
+                fill="url(#colorCpu)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-full text-muted text-sm">
+            Waiting for metrics data...
+          </div>
+        )}
       </div>
     );
   }
@@ -76,12 +156,31 @@ function MetricCard({
   unit 
 }: { 
   title: string; 
-  data: { time: string; value: number }[]; 
+  data: MetricDataPoint[]; 
   color: string; 
   unit: string;
 }) {
   const currentValue = data[data.length - 1]?.value ?? 0;
-  const avgValue = data.reduce((sum, d) => sum + d.value, 0) / data.length;
+  const avgValue = data.length > 0 
+    ? data.reduce((sum, d) => sum + d.value, 0) / data.length 
+    : 0;
+
+  if (data.length === 0) {
+    return (
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold">{title}</h3>
+          <div className="text-right">
+            <p className="text-2xl font-bold text-muted">--</p>
+            <p className="text-xs text-muted">No data</p>
+          </div>
+        </div>
+        <div className="h-48 flex items-center justify-center text-muted text-sm">
+          Waiting for data...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="card">
@@ -139,39 +238,4 @@ function MetricCard({
       </div>
     </div>
   );
-}
-
-// Generate placeholder metric data
-function generateMetricData(type: string): { time: string; value: number }[] {
-  const data = [];
-  const now = new Date();
-  
-  for (let i = 30; i >= 0; i--) {
-    const time = new Date(now.getTime() - i * 60000);
-    let value: number;
-
-    switch (type) {
-      case "cpu":
-        value = 30 + Math.random() * 40 + Math.sin(i / 5) * 10;
-        break;
-      case "memory":
-        value = 50 + Math.random() * 20 + Math.sin(i / 8) * 5;
-        break;
-      case "network":
-        value = 5 + Math.random() * 10;
-        break;
-      case "disk":
-        value = 2 + Math.random() * 5;
-        break;
-      default:
-        value = Math.random() * 100;
-    }
-
-    data.push({
-      time: time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      value: Math.max(0, value),
-    });
-  }
-
-  return data;
 }

@@ -68,7 +68,7 @@ pub async fn event_listener(state: Arc<RwLock<AgentState>>) {
                             .unwrap_or_default(),
                         actor_name: event.actor.as_ref()
                             .and_then(|a| a.attributes.as_ref())
-                            .and_then(|attrs| attrs.get("name").cloned())
+                            .and_then(|attrs: &HashMap<String, String>| attrs.get("name").cloned())
                             .unwrap_or_default(),
                         attributes: event.actor
                             .and_then(|a| a.attributes)
@@ -81,7 +81,7 @@ pub async fn event_listener(state: Arc<RwLock<AgentState>>) {
                     if let Some(ref nats) = nats {
                         let subject = format!("metalhive.events.docker.{}", hostname);
                         if let Ok(payload) = serde_json::to_vec(&docker_event) {
-                            if let Err(e) = nats.publish(subject, payload.into()).await {
+                            if let Err(e) = nats.publish(subject, bytes::Bytes::from(payload)).await {
                                 error!(error = %e, "Failed to publish Docker event");
                             }
                         }
@@ -120,8 +120,8 @@ pub async fn list_containers(docker: &bollard::Docker) -> Result<Vec<ContainerIn
         let status = container.status.unwrap_or_default();
         let state = container.state.unwrap_or_default();
         
-        let health = inspect.state
-            .and_then(|s| s.health)
+        let health = inspect.state.as_ref()
+            .and_then(|s| s.health.clone())
             .and_then(|h| h.status)
             .map(|s| format!("{:?}", s));
         
@@ -143,7 +143,7 @@ pub async fn list_containers(docker: &bollard::Docker) -> Result<Vec<ContainerIn
         let labels = container.labels.unwrap_or_default();
         
         let created_at = inspect.created.unwrap_or_default();
-        let started_at = inspect.state.and_then(|s| s.started_at);
+        let started_at = inspect.state.as_ref().and_then(|s| s.started_at.clone());
         
         result.push(ContainerInfo {
             id,

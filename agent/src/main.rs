@@ -7,15 +7,9 @@
 //! - Managing Docker containers
 //! - Broadcasting presence via mDNS
 
-mod config;
-mod docker;
-mod executor;
-mod health;
-mod metrics;
-mod nats_client;
-
 use anyhow::Result;
 use clap::Parser;
+use metalhive_agent::{config, docker, executor, health, metrics, AgentState};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -53,15 +47,6 @@ struct Args {
     /// Log level
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     log_level: String,
-}
-
-/// Agent state shared across tasks
-pub struct AgentState {
-    pub agent_id: String,
-    pub hostname: String,
-    pub labels: std::collections::HashMap<String, String>,
-    pub docker_client: bollard::Docker,
-    pub nats_client: Option<async_nats::Client>,
 }
 
 #[tokio::main]

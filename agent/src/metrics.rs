@@ -4,7 +4,7 @@
 
 use crate::AgentState;
 use std::sync::Arc;
-use sysinfo::System;
+use sysinfo::{Disks, System};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
@@ -45,6 +45,7 @@ pub struct ContainerMetrics {
 /// Main metrics collection loop
 pub async fn collection_loop(state: Arc<RwLock<AgentState>>, interval_secs: u64) {
     let mut sys = System::new_all();
+    let mut disks = Disks::new_with_refreshed_list();
     let interval = tokio::time::Duration::from_secs(interval_secs);
     
     info!(interval_secs = interval_secs, "Starting metrics collection loop");
@@ -52,18 +53,19 @@ pub async fn collection_loop(state: Arc<RwLock<AgentState>>, interval_secs: u64)
     loop {
         // Refresh system info
         sys.refresh_all();
+        disks.refresh_list();
         
         let state = state.read().await;
         
         // Collect system metrics
-        let system_metrics = collect_system_metrics(&sys, &state.hostname);
+        let system_metrics = collect_system_metrics(&sys, &disks, &state.hostname);
         debug!(metrics = ?system_metrics, "Collected system metrics");
         
         // Publish to NATS if connected
         if let Some(ref nats) = state.nats_client {
             let subject = format!("metalhive.metrics.system.{}", state.hostname);
             if let Ok(payload) = serde_json::to_vec(&system_metrics) {
-                if let Err(e) = nats.publish(subject, payload.into()).await {
+                if let Err(e) = nats.publish(subject, bytes::Bytes::from(payload)).await {
                     error!(error = %e, "Failed to publish system metrics");
                 }
             }
@@ -78,7 +80,7 @@ pub async fn collection_loop(state: Arc<RwLock<AgentState>>, interval_secs: u64)
                     for cm in container_metrics {
                         let subject = format!("metalhive.metrics.container.{}", state.hostname);
                         if let Ok(payload) = serde_json::to_vec(&cm) {
-                            if let Err(e) = nats.publish(subject.clone(), payload.into()).await {
+                            if let Err(e) = nats.publish(subject.clone(), bytes::Bytes::from(payload)).await {
                                 error!(error = %e, "Failed to publish container metrics");
                             }
                         }
@@ -96,7 +98,7 @@ pub async fn collection_loop(state: Arc<RwLock<AgentState>>, interval_secs: u64)
 }
 
 /// Collect system-level metrics
-fn collect_system_metrics(sys: &System, hostname: &str) -> SystemMetrics {
+fn collect_system_metrics(sys: &System, disks: &Disks, hostname: &str) -> SystemMetrics {
     let cpu_usage = sys.global_cpu_usage();
     
     let memory_total = sys.total_memory() / 1024 / 1024; // MB
@@ -110,7 +112,7 @@ fn collect_system_metrics(sys: &System, hostname: &str) -> SystemMetrics {
     // Get disk usage for root partition
     let mut disk_total: u64 = 0;
     let mut disk_used: u64 = 0;
-    for disk in sys.disks() {
+    for disk in disks.iter() {
         if disk.mount_point().to_string_lossy() == "/" {
             disk_total = disk.total_space() / 1024 / 1024 / 1024; // GB
             disk_used = (disk.total_space() - disk.available_space()) / 1024 / 1024 / 1024;

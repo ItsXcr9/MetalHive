@@ -56,7 +56,7 @@ pub async fn check_loop(state: Arc<RwLock<AgentState>>) {
                         for result in &unhealthy {
                             let subject = format!("metalhive.health.alert.{}", hostname);
                             if let Ok(payload) = serde_json::to_vec(result) {
-                                if let Err(e) = nats.publish(subject, payload.into()).await {
+                                if let Err(e) = nats.publish(subject, bytes::Bytes::from(payload)).await {
                                     error!(error = %e, "Failed to publish health alert");
                                 }
                             }

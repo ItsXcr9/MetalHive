@@ -56,6 +56,8 @@ func SetupRoutes(app *fiber.App, h *Handler) {
 	nodes.Get("/", h.ListNodes)
 	nodes.Get("/:hostname", h.GetNode)
 	nodes.Post("/", h.RegisterNode)
+	nodes.Post("/deploy", h.DeployAgent)       // SSH deploy agent to new server
+	nodes.Post("/test-ssh", h.TestSSHConnection) // Test SSH connection
 	nodes.Delete("/:hostname", h.RemoveNode)
 	nodes.Post("/:hostname/drain", h.DrainNode)
 	nodes.Post("/:hostname/cordon", h.CordonNode)
@@ -110,6 +112,18 @@ func SetupRoutes(app *fiber.App, h *Handler) {
 	system := v1.Group("/system")
 	system.Post("/update", h.TriggerSystemUpdate)
 	system.Get("/updates", h.GetUpdateHistory)
+
+	// Xcr9 Products Management
+	products := v1.Group("/products")
+	products.Get("/", h.ListProducts)
+	products.Get("/:name", h.GetProduct)
+	products.Post("/:name/install", h.InstallProduct)
+	products.Post("/:name/uninstall", h.UninstallProduct)
+	products.Post("/:name/start", h.StartProduct)
+	products.Post("/:name/stop", h.StopProduct)
+	products.Post("/:name/restart", h.RestartProduct)
+	products.Get("/:name/metrics/*", h.GetProductMetrics)
+	products.Get("/ancientreport/dashboard", h.GetAncientReportDashboard)
 
 	// Agent heartbeat endpoint
 	api.Post("/agents/heartbeat", h.AgentHeartbeat)

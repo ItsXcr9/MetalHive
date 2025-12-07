@@ -24,8 +24,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /controller ./cmd/cont
 # Stage 2: Runtime
 FROM alpine:3.20
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata && \
+# Install runtime dependencies including Docker CLI for product management
+RUN apk add --no-cache ca-certificates tzdata docker-cli docker-cli-compose && \
     rm -rf /var/cache/apk/*
 
 # Create non-root user

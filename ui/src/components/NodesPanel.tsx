@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchNodes, registerNode } from "@/lib/api";
-import { Server, Cpu, HardDrive, MemoryStick, Plus, X, Copy, Check } from "lucide-react";
+import { Server, Cpu, HardDrive, MemoryStick, Plus, X, Copy, Check, Terminal } from "lucide-react";
+import { AddNodeModal } from "./AddNodeModal";
 
 interface NodesPanelProps {
   selectedNode: string | null;
@@ -12,6 +13,7 @@ interface NodesPanelProps {
 
 export function NodesPanel({ selectedNode, onSelectNode }: NodesPanelProps) {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showSSHModal, setShowSSHModal] = useState(false);
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -42,12 +44,20 @@ export function NodesPanel({ selectedNode, onSelectNode }: NodesPanelProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Fleet Nodes</h1>
-        <button 
-          className="btn btn-primary flex items-center gap-2"
-          onClick={() => setShowAddModal(true)}
-        >
-          <Plus size={18} /> Add Node
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            className="btn btn-secondary flex items-center gap-2"
+            onClick={() => setShowSSHModal(true)}
+          >
+            <Terminal size={18} /> Add Node with SSH
+          </button>
+          <button 
+            className="btn btn-primary flex items-center gap-2"
+            onClick={() => setShowAddModal(true)}
+          >
+            <Plus size={18} /> Add Node
+          </button>
+        </div>
       </div>
 
       {/* Node Grid */}
@@ -74,7 +84,7 @@ export function NodesPanel({ selectedNode, onSelectNode }: NodesPanelProps) {
 
       {/* Add Node Modal */}
       {showAddModal && (
-        <AddNodeModal 
+        <AddNodeModalLegacy 
           onClose={() => setShowAddModal(false)} 
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ["nodes"] });
@@ -82,11 +92,21 @@ export function NodesPanel({ selectedNode, onSelectNode }: NodesPanelProps) {
           }}
         />
       )}
+
+      {/* SSH Add Node Modal */}
+      <AddNodeModal
+        isOpen={showSSHModal}
+        onClose={() => setShowSSHModal(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["nodes"] });
+          setShowSSHModal(false);
+        }}
+      />
     </div>
   );
 }
 
-function AddNodeModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+function AddNodeModalLegacy({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [hostname, setHostname] = useState("");
   const [ip, setIp] = useState("");
   const [copied, setCopied] = useState(false);

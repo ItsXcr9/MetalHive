@@ -1,0 +1,306 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { 
+  Shield, 
+  Activity, 
+  Network, 
+  Server, 
+  AlertTriangle,
+  ExternalLink,
+  RefreshCw,
+  Cpu,
+  HardDrive
+} from "lucide-react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+interface AncientReportData {
+  available: boolean;
+  api_healthy: boolean;
+  servers?: { servers: string[] };
+  metrics?: {
+    tcp_connections: Array<{
+      process_name: string;
+      local_port: number;
+      remote_port: number;
+      remote_ip: string;
+      state: string;
+      bytes_sent: number;
+      bytes_received: number;
+      container_id: string;
+    }>;
+    process_flows: Array<{
+      process_name: string;
+      bytes_sent: number;
+      bytes_received: number;
+      active_flows: number;
+      container_id: string;
+    }>;
+    syscall_stats: Array<{
+      process_name: string;
+      total_count: number;
+      connect_count: number;
+      open_count: number;
+    }>;
+    total_processes?: number;  // Total running processes on system
+    packet_drops?: number;  // Total RX+TX packet drops
+  };
+  security?: {
+    overall_score: number;
+    active_threats: number;
+    total_open_ports: number;
+    risky_ports_count: number;
+    hosts_scanned: number;
+  };
+  ui_url?: string;
+  api_url?: string;
+}
+
+async function fetchAncientReportDashboard(hostname?: string): Promise<AncientReportData> {
+  const url = hostname 
+    ? `${API_URL}/api/v1/products/ancientreport/dashboard?hostname=${hostname}`
+    : `${API_URL}/api/v1/products/ancientreport/dashboard`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch AncientReport data");
+  return res.json();
+}
+
+interface AncientReportWidgetProps {
+  hostname?: string;
+  compact?: boolean;
+}
+
+export function AncientReportWidget({ hostname, compact = false }: AncientReportWidgetProps) {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["ancientreport-dashboard", hostname],
+    queryFn: () => fetchAncientReportDashboard(hostname),
+    refetchInterval: 30000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="card animate-pulse">
+        <div className="h-32 bg-surface-hover rounded-lg" />
+      </div>
+    );
+  }
+
+  if (error || !data?.available) {
+    return (
+      <div className="card border-dashed border-yellow-500/30">
+        <div className="flex items-center gap-3 text-yellow-400">
+          <AlertTriangle size={20} />
+          <div>
+            <p className="font-medium">AncientReport Unavailable</p>
+            <p className="text-xs text-muted">eBPF monitoring not running</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { security, metrics, servers, ui_url } = data;
+  
+  // Calculate score color
+  const score = security?.overall_score ?? 0;
+  const scoreColor = score >= 80 
+    ? "text-green-400" 
+    : score >= 50 
+      ? "text-yellow-400" 
+      : "text-red-400";
+
+  // Calculate totals - sum active_flows for connection count, not just array length
+  const totalConnections = metrics?.process_flows?.reduce(
+    (sum, p) => sum + (p.active_flows || 0), 0
+  ) || metrics?.tcp_connections?.length || 0;
+  
+  const totalProcesses = metrics?.total_processes || metrics?.process_flows?.length || 0;
+  
+  // Get packet drops from metrics
+  const packetDrops = metrics?.packet_drops || 0;
+
+  if (compact) {
+    return (
+      <div className="card bg-gradient-to-br from-purple-900/20 to-blue-900/20 border-purple-500/30">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-lg bg-purple-500/20">
+              <Activity className="text-purple-400" size={20} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-sm">AncientReport</h3>
+              <p className="text-xs text-muted">eBPF Observability</p>
+            </div>
+          </div>
+          {ui_url && (
+            <a 
+              href={ui_url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="btn btn-sm btn-secondary flex items-center gap-1"
+            >
+              <ExternalLink size={12} /> Open
+            </a>
+          )}
+        </div>
+        
+        <div className="grid grid-cols-3 gap-3">
+          <div className="text-center p-2 rounded-lg bg-surface-hover">
+            <p className={`text-2xl font-bold ${scoreColor}`}>{security?.overall_score || 0}</p>
+            <p className="text-xs text-muted">Security</p>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-surface-hover">
+            <p className="text-2xl font-bold text-blue-400">{totalConnections}</p>
+            <p className="text-xs text-muted">Connections</p>
+          </div>
+          <div className="text-center p-2 rounded-lg bg-surface-hover">
+            <p className="text-2xl font-bold text-green-400">{servers?.servers?.length || 0}</p>
+            <p className="text-xs text-muted">Servers</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500/20 to-blue-500/20">
+            <Activity className="text-purple-400" size={24} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold">AncientReport</h2>
+            <p className="text-sm text-muted">eBPF-based System Observability</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => refetch()} className="btn btn-secondary btn-sm">
+            <RefreshCw size={14} />
+          </button>
+          {ui_url && (
+            <a 
+              href={ui_url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="btn btn-primary btn-sm flex items-center gap-1"
+            >
+              <ExternalLink size={14} /> Open Dashboard
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Security Score */}
+        <div className="card text-center">
+          <Shield className={`mx-auto mb-2 ${scoreColor}`} size={28} />
+          <p className={`text-3xl font-bold ${scoreColor}`}>{security?.overall_score || 0}</p>
+          <p className="text-sm text-muted">Security Score</p>
+          {security?.active_threats !== undefined && security.active_threats > 0 && (
+            <p className="text-xs text-red-400 mt-1">{security.active_threats} threats</p>
+          )}
+        </div>
+
+        {/* Connections */}
+        <div className="card text-center">
+          <Network className="mx-auto mb-2 text-blue-400" size={28} />
+          <p className="text-3xl font-bold text-blue-400">{totalConnections}</p>
+          <p className="text-sm text-muted">TCP Connections</p>
+          <p className="text-xs text-muted mt-1">{security?.total_open_ports || 0} ports</p>
+        </div>
+
+        {/* Processes */}
+        <div className="card text-center">
+          <Cpu className="mx-auto mb-2 text-green-400" size={28} />
+          <p className="text-3xl font-bold text-green-400">{totalProcesses}</p>
+          <p className="text-sm text-muted">Active Processes</p>
+        </div>
+
+        {/* Packet Drops */}
+        <div className="card text-center">
+          <HardDrive className="mx-auto mb-2 text-yellow-400" size={28} />
+          <p className="text-3xl font-bold text-yellow-400">{packetDrops.toLocaleString()}</p>
+          <p className="text-sm text-muted">Packet Drops</p>
+        </div>
+      </div>
+
+      {/* Servers */}
+      {servers?.servers && servers.servers.length > 0 && (
+        <div className="card">
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <Server size={16} /> Monitored Servers
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {servers.servers.map((server) => (
+              <span 
+                key={server} 
+                className="px-3 py-1 rounded-full bg-surface-hover text-sm font-mono"
+              >
+                {server}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Top TCP Connections - Sorted by most data transferred */}
+      {metrics?.tcp_connections && metrics.tcp_connections.length > 0 && (
+        <div className="card">
+          <h3 className="font-semibold mb-3">Top TCP Connections</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-muted border-b border-border">
+                  <th className="text-left py-2">Process</th>
+                  <th className="text-left py-2">Local Port</th>
+                  <th className="text-left py-2">Remote Port</th>
+                  <th className="text-left py-2">State</th>
+                  <th className="text-right py-2">Remote IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...metrics.tcp_connections]
+                  .sort((a, b) => {
+                    // Prioritize ESTABLISHED over LISTEN, then by port
+                    if (a.state === "ESTABLISHED" && b.state !== "ESTABLISHED") return -1;
+                    if (b.state === "ESTABLISHED" && a.state !== "ESTABLISHED") return 1;
+                    return a.local_port - b.local_port;
+                  })
+                  .slice(0, 5)
+                  .map((conn, i) => (
+                  <tr key={i} className="border-b border-border/50 hover:bg-surface-hover">
+                    <td className="py-2 font-mono">{conn.process_name}</td>
+                    <td className="py-2 text-blue-400">{conn.local_port}</td>
+                    <td className="py-2 text-purple-400">{conn.remote_port || "-"}</td>
+                    <td className="py-2">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        conn.state === "ESTABLISHED" ? "bg-green-500/20 text-green-400" : "bg-yellow-500/20 text-yellow-400"
+                      }`}>
+                        {conn.state}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right text-muted font-mono text-xs">
+                      {conn.remote_ip && conn.remote_ip !== "0.0.0.0" ? conn.remote_ip : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}

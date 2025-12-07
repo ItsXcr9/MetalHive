@@ -9,6 +9,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
+use futures::StreamExt;
 
 /// Command execution request
 #[derive(Debug, serde::Deserialize)]
@@ -54,7 +55,7 @@ pub async fn command_listener(state: Arc<RwLock<AgentState>>) {
     let node_subject = format!("metalhive.commands.{}", hostname);
     let broadcast_subject = "metalhive.commands.broadcast";
     
-    let mut node_sub = match nats.subscribe(node_subject.clone()).await {
+    let mut node_sub: async_nats::Subscriber = match nats.subscribe(node_subject.clone()).await {
         Ok(sub) => sub,
         Err(e) => {
             error!(error = %e, "Failed to subscribe to node commands");
@@ -62,7 +63,7 @@ pub async fn command_listener(state: Arc<RwLock<AgentState>>) {
         }
     };
     
-    let mut broadcast_sub = match nats.subscribe(broadcast_subject).await {
+    let mut broadcast_sub: async_nats::Subscriber = match nats.subscribe(broadcast_subject).await {
         Ok(sub) => sub,
         Err(e) => {
             error!(error = %e, "Failed to subscribe to broadcast commands");
@@ -108,7 +109,7 @@ async fn handle_command_message(
             // Publish result
             let result_subject = format!("metalhive.results.{}", request.execution_id);
             if let Ok(payload) = serde_json::to_vec(&result) {
-                if let Err(e) = nats.publish(result_subject, payload.into()).await {
+                if let Err(e) = nats.publish(result_subject, bytes::Bytes::from(payload)).await {
                     error!(error = %e, "Failed to publish command result");
                 }
             }

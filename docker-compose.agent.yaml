@@ -1,0 +1,45 @@
+# MetalHive/AncientReport Agent - Standalone Deployment
+# Deploy this on any server you want to monitor
+# 
+# INSTRUCTIONS:
+# 1. Copy this file to your target server
+# 2. Edit CENTRAL_SERVER_IP to point to your MetalHive central server
+# 3. Run: docker compose -f docker-compose.agent.yaml up -d
+
+services:
+  agent:
+    image: ghcr.io/your-org/ancientreport-agent:latest  # Or build locally
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: metalhive-agent
+    hostname: ${HOSTNAME:-$(hostname)}
+    network_mode: host
+    pid: "host"           # Required to see host processes
+    privileged: true      # Required for eBPF
+    environment:
+      TZ: ${TZ:-UTC}
+      # Point to your central MetalHive/AncientReport server
+      NATS_URL: nats://${CENTRAL_SERVER_IP:-65.109.200.75}:4222
+      CLICKHOUSE_HOST: ${CENTRAL_SERVER_IP:-65.109.200.75}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-6123}
+      CLICKHOUSE_DB: AncientReport
+      CLICKHOUSE_USER: AncientReport
+      CLICKHOUSE_PASSWORD: AncientReport
+      NATS_ENABLED: "true"
+    volumes:
+      # eBPF & process monitoring
+      - /sys/kernel/debug:/sys/kernel/debug:ro
+      - /sys/fs/bpf:/sys/fs/bpf:ro
+      - /proc:/host/proc:ro
+      # Docker container monitoring
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Timezone
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
