@@ -263,7 +263,7 @@ export function ShellPanel() {
         {/* Command Input */}
         <div className="flex gap-3">
           <div className="flex-1 relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-400 font-mono">$</span>
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-400 font-mono relative">$</span>
             <input
               type="text"
               value={command}

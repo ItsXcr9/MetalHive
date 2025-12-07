@@ -223,20 +223,20 @@ function ContainerCard({
           </button>
           <div className="w-px h-6 bg-border mx-1" />
           <button 
-            onClick={handleLogs}
-            disabled={loading !== null}
-            className="btn-ghost p-2 rounded-lg text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 transition-colors" 
-            title="Logs"
-          >
-            {loading === "logs" ? <Loader2 size={16} className="animate-spin" /> : <Terminal size={16} />}
-          </button>
-          <button 
             onClick={() => onOpenShell(container.id, container.name)}
             disabled={loading !== null || container.state !== "running"}
             className="btn-ghost p-2 rounded-lg text-cyan-400 hover:bg-cyan-500/10 disabled:opacity-50 transition-colors" 
             title="Shell"
           >
-            <MonitorUp size={16} />
+            <Terminal size={16} />
+          </button>
+          <button 
+            onClick={handleLogs}
+            disabled={loading !== null}
+            className="btn-ghost p-2 rounded-lg text-purple-400 hover:bg-purple-500/10 disabled:opacity-50 transition-colors" 
+            title="Logs"
+          >
+            {loading === "logs" ? <Loader2 size={16} className="animate-spin" /> : <MonitorUp size={16} />}
           </button>
           <div className="w-px h-6 bg-border mx-1" />
           <button 

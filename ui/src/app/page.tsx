@@ -1,18 +1,45 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
-import { NodesPanel } from "@/components/NodesPanel";
-import { ContainersPanel } from "@/components/ContainersPanel";
-import { ShellPanel } from "@/components/ShellPanel";
-import { ConfigPanel } from "@/components/ConfigPanel";
-import { AIPanel } from "@/components/AIPanel";
-import { MetricsPanel } from "@/components/MetricsPanel";
-import { ProductsPanel } from "@/components/ProductsPanel";
 import { DashboardStats } from "@/components/DashboardStats";
 import { AncientReportWidget } from "@/components/AncientReportWidget";
 import { FleetOverview } from "@/components/FleetOverview";
+
+// Loading component for dynamic chunks
+const PanelLoader = () => (
+  <div className="flex items-center justify-center h-full min-h-[400px]">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      <span className="text-sm text-muted">Loading panel...</span>
+    </div>
+  </div>
+);
+
+// Dynamic imports for code splitting
+const NodesPanel = dynamic(() => import("@/components/NodesPanel").then(mod => mod.NodesPanel), {
+  loading: () => <PanelLoader />,
+});
+const ContainersPanel = dynamic(() => import("@/components/ContainersPanel").then(mod => mod.ContainersPanel), {
+  loading: () => <PanelLoader />,
+});
+const ShellPanel = dynamic(() => import("@/components/ShellPanel").then(mod => mod.ShellPanel), {
+  loading: () => <PanelLoader />,
+});
+const ConfigPanel = dynamic(() => import("@/components/ConfigPanel").then(mod => mod.ConfigPanel), {
+  loading: () => <PanelLoader />,
+});
+const AIPanel = dynamic(() => import("@/components/AIPanel").then(mod => mod.AIPanel), {
+  loading: () => <PanelLoader />,
+});
+const MetricsPanel = dynamic(() => import("@/components/MetricsPanel").then(mod => mod.MetricsPanel), {
+  loading: () => <PanelLoader />,
+});
+const ProductsPanel = dynamic(() => import("@/components/ProductsPanel").then(mod => mod.ProductsPanel), {
+  loading: () => <PanelLoader />,
+});
 
 type ActivePanel = "dashboard" | "nodes" | "containers" | "shell" | "config" | "ai" | "metrics" | "products";
 

@@ -221,9 +221,20 @@ export function AncientReportWidget({ hostname, compact = false }: AncientReport
         </div>
 
         {/* Packet Drops */}
-        <div className="card text-center">
-          <HardDrive className="mx-auto mb-2 text-yellow-400" size={28} />
-          <p className="text-3xl font-bold text-yellow-400">{packetDrops.toLocaleString()}</p>
+        {/* Packet Drops */}
+        <div className={`card text-center transition-all duration-300 ${packetDrops > 100 ? "bg-red-500/10 border-red-500/30" : packetDrops > 0 ? "bg-yellow-500/10 border-yellow-500/30" : "bg-green-500/5 border-green-500/20"}`}>
+          <div className="relative inline-block mx-auto mb-2">
+            <Activity className={`relative z-10 ${packetDrops > 100 ? "text-red-400" : packetDrops > 0 ? "text-yellow-400" : "text-green-400"}`} size={28} />
+            {packetDrops > 0 && (
+               <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                 <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+               </span>
+            )}
+          </div>
+          <p className={`text-3xl font-bold ${packetDrops > 100 ? "text-red-400" : packetDrops > 0 ? "text-yellow-400" : "text-green-400"}`}>
+            {packetDrops.toLocaleString()}
+          </p>
           <p className="text-sm text-muted">Packet Drops</p>
         </div>
       </div>

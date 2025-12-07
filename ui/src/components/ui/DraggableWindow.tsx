@@ -109,7 +109,19 @@ export function DraggableWindow({
     document.removeEventListener("mousemove", handleMouseMoveResize);
     document.removeEventListener("mouseup", handleMouseUpResize);
     document.body.style.userSelect = "";
+    document.body.style.userSelect = "";
   };
+
+  // Cleanup event listeners on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMoveDrag);
+      document.removeEventListener("mouseup", handleMouseUpDrag);
+      document.removeEventListener("mousemove", handleMouseMoveResize);
+      document.removeEventListener("mouseup", handleMouseUpResize);
+      document.body.style.userSelect = "";
+    };
+  }, []);
 
   const toggleMaximize = () => {
     setIsMaximized(!isMaximized);
