@@ -2,13 +2,18 @@
 # MetalHive Agent Dockerfile
 # ==============================================================================
 # Multi-stage build for minimal production image
+# Using Debian for build (better SSL) and Alpine for runtime (minimal size)
 # ==============================================================================
 
-# Stage 1: Build
-FROM rustlang/rust:nightly-alpine AS builder
+# Stage 1: Build using Debian (better SSL/network compatibility)
+FROM rust:1.83-slim-bookworm AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -20,7 +25,7 @@ COPY src ./src
 RUN cargo build --release
 
 
-# Stage 2: Runtime
+# Stage 2: Runtime (Alpine for minimal size)
 FROM alpine:3.20
 
 # Install runtime dependencies
@@ -28,6 +33,7 @@ RUN apk add --no-cache \
     ca-certificates \
     docker-cli \
     avahi-tools \
+    libgcc \
     && rm -rf /var/cache/apk/*
 
 # Create non-root user
