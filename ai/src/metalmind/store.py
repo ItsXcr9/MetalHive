@@ -138,7 +138,7 @@ class ClickHouseStore:
             self._client.insert(
                 "metalhive.ai_reports",
                 [[
-                    report.get("type", "analysis"),
+                    report.get("type", "recommendation"),
                     report.get("severity", "info"),
                     report.get("title", "AI Analysis"),
                     report.get("summary", ""),
@@ -155,3 +155,38 @@ class ClickHouseStore:
         except Exception as e:
             logger.error("Failed to save report", error=str(e))
             return ""
+
+    async def get_reports(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Get AI analysis reports from ClickHouse"""
+        if not self._client:
+            return []
+        
+        query = """
+            SELECT id, report_type, severity, title, summary, details, 
+                   affected_nodes, recommendations, auto_remediation_applied, created_at
+            FROM metalhive.ai_reports
+            ORDER BY created_at DESC
+            LIMIT %(limit)s
+        """
+        
+        try:
+            result = self._client.query(query, parameters={"limit": limit})
+            return [
+                {
+                    "id": str(row[0]),
+                    "report_type": row[1],
+                    "severity": row[2],
+                    "title": row[3],
+                    "summary": row[4],
+                    "details": row[5],
+                    "affected_nodes": list(row[6]) if row[6] else [],
+                    "recommendations": list(row[7]) if row[7] else [],
+                    "auto_remediation_applied": row[8],
+                    "created_at": row[9].isoformat() if row[9] else None,
+                }
+                for row in result.result_rows
+            ]
+        except Exception as e:
+            logger.error("Failed to get reports", error=str(e))
+            return []
+

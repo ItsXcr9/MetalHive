@@ -148,6 +148,24 @@ async def health_check() -> dict[str, str]:
     }
 
 
+@app.get("/reports")
+async def get_reports(limit: int = 50) -> dict[str, Any]:
+    """
+    Get saved AI analysis reports from ClickHouse.
+    """
+    store: ClickHouseStore | None = app.state.store
+    
+    if not store:
+        return {"reports": [], "error": "Database not available"}
+    
+    try:
+        reports = await store.get_reports(limit=limit)
+        return {"reports": reports, "total": len(reports)}
+    except Exception as e:
+        logger.error("Failed to get reports", error=str(e))
+        return {"reports": [], "error": str(e)}
+
+
 @app.post("/ask", response_model=AskResponse)
 async def ask_ai(request: AskRequest) -> AskResponse:
     """
@@ -289,8 +307,28 @@ Provide a 2-3 sentence summary of the fleet health and any concerns."""
     elif any(a.get("severity") == "warning" for a in anomalies):
         severity = "warning"
     
+    report_id = f"report-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    
+    # Save report to ClickHouse
+    if store:
+        try:
+            report_data = {
+                "id": report_id,
+                "type": "anomaly" if anomalies else "recommendation",
+                "severity": severity,
+                "title": f"Fleet Analysis - {request.hostname or 'All Nodes'}",
+                "summary": summary,
+                "details": f"Time range: {request.time_range_hours}h, Anomalies: {len(anomalies)}, Trends: {len(trends)}",
+                "affected_nodes": [request.hostname] if request.hostname else [],
+                "recommendations": recommendations,
+            }
+            await store.save_report(report_data)
+            logger.info("Report saved to ClickHouse", report_id=report_id)
+        except Exception as e:
+            logger.warning("Failed to save report to ClickHouse", error=str(e))
+
     return AnalyzeResponse(
-        report_id=f"report-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        report_id=report_id,
         hostname=request.hostname,
         summary=summary,
         severity=severity,

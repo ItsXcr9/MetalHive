@@ -9,7 +9,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use metalhive_agent::{config, docker, executor, health, metrics, AgentState};
+use metalhive_agent::{config, docker, executor, health, metrics, vault, AgentState};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -47,6 +47,18 @@ struct Args {
     /// Log level
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     log_level: String,
+
+    /// Enable HiveVault config sync
+    #[arg(long, env = "VAULT_SYNC_ENABLED", default_value = "true")]
+    vault_sync: bool,
+
+    /// HiveVault sync interval in seconds
+    #[arg(long, env = "VAULT_SYNC_INTERVAL", default_value = "60")]
+    vault_sync_interval: u64,
+
+    /// HiveVault namespaces to sync (comma-separated)
+    #[arg(long, env = "VAULT_NAMESPACES", default_value = "/global/,/production/")]
+    vault_namespaces: String,
 }
 
 #[tokio::main]
@@ -100,6 +112,9 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Create vault cache
+    let vault_cache = Arc::new(RwLock::new(vault::VaultCache::default()));
+
     // Create shared state
     let state = Arc::new(RwLock::new(AgentState {
         agent_id: agent_id.clone(),
@@ -107,6 +122,7 @@ async fn main() -> Result<()> {
         labels,
         docker_client: docker,
         nats_client,
+        vault_cache: Arc::clone(&vault_cache),
     }));
 
     // Spawn background tasks
@@ -155,6 +171,29 @@ async fn main() -> Result<()> {
     handles.push(tokio::spawn(async move {
         heartbeat_loop(heartbeat_state, &controller_url).await;
     }));
+
+    // 7. HiveVault config sync (if enabled)
+    if args.vault_sync {
+        let vault_controller_url = args.controller_url.clone();
+        let vault_namespaces: Vec<String> = args.vault_namespaces
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let vault_interval = args.vault_sync_interval;
+        let vault_cache_clone = Arc::clone(&vault_cache);
+        
+        info!(namespaces = ?vault_namespaces, interval = vault_interval, "Starting HiveVault sync");
+        
+        handles.push(tokio::spawn(async move {
+            vault::config_sync_loop(
+                vault_controller_url,
+                vault_namespaces,
+                vault_interval,
+                vault_cache_clone,
+            ).await;
+        }));
+    }
 
     info!("🚀 Agent is running. Press Ctrl+C to stop.");
 

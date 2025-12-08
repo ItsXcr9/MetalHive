@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchContainers, startContainer, stopContainer, restartContainer, removeContainer, getContainerLogs } from "@/lib/api";
-import { Box, Play, Square, RefreshCw, Trash2, Terminal, X, Loader2, MonitorUp } from "lucide-react";
+import { fetchContainers, startContainer, stopContainer, restartContainer, removeContainer, getContainerLogs, deployStack } from "@/lib/api";
+import { Box, Play, Square, RefreshCw, Trash2, Terminal, X, Loader2, MonitorUp, Rocket } from "lucide-react";
 import { useState } from "react";
 import { ContainerTerminal } from "./ContainerTerminal";
 import { DraggableWindow } from "@/components/ui/DraggableWindow";
@@ -15,6 +15,17 @@ export function ContainersPanel({ selectedNode }: ContainersPanelProps) {
   const queryClient = useQueryClient();
   const [logsModal, setLogsModal] = useState<{ id: string; name: string; logs: string } | null>(null);
   const [shellModal, setShellModal] = useState<{ id: string; name: string } | null>(null);
+  const [deployModal, setDeployModal] = useState(false);
+  const [stackName, setStackName] = useState("");
+  const [composeYaml, setComposeYaml] = useState(`version: '3.8'
+services:
+  example:
+    image: nginx:alpine
+    ports:
+      - "8888:80"
+`);
+  const [deploying, setDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState<{ success: boolean; message: string; output?: string } | null>(null);
   
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["containers", selectedNode],
@@ -23,6 +34,30 @@ export function ContainersPanel({ selectedNode }: ContainersPanelProps) {
   });
 
   const containers = data?.containers || [];
+
+  const handleDeployStack = async () => {
+    if (!stackName.trim()) {
+      alert("Please enter a stack name");
+      return;
+    }
+    
+    setDeploying(true);
+    setDeployResult(null);
+    
+    try {
+      const result = await deployStack({
+        name: stackName,
+        compose_yaml: composeYaml,
+      });
+      setDeployResult({ success: true, message: result.message, output: result.output });
+      // Refresh containers after deployment
+      setTimeout(() => refetch(), 2000);
+    } catch (err: any) {
+      setDeployResult({ success: false, message: err.message || "Deployment failed" });
+    }
+    
+    setDeploying(false);
+  };
 
   if (isLoading) {
     return (
@@ -46,7 +81,10 @@ export function ContainersPanel({ selectedNode }: ContainersPanelProps) {
             <RefreshCw size={16} />
             Refresh
           </button>
-          <button className="btn btn-primary">+ Deploy Stack</button>
+          <button onClick={() => setDeployModal(true)} className="btn btn-primary">
+            <Rocket size={16} />
+            Deploy Stack
+          </button>
         </div>
       </div>
 
@@ -104,9 +142,88 @@ export function ContainersPanel({ selectedNode }: ContainersPanelProps) {
           onClose={() => setShellModal(null)}
         />
       )}
+
+      {/* Deploy Stack Modal */}
+      {deployModal && (
+        <DraggableWindow
+          title="Deploy Stack"
+          initialWidth={700}
+          initialHeight={600}
+          onClose={() => {
+            setDeployModal(false);
+            setDeployResult(null);
+          }}
+        >
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Stack Name</label>
+              <input
+                type="text"
+                value={stackName}
+                onChange={(e) => setStackName(e.target.value)}
+                placeholder="my-stack"
+                className="w-full px-3 py-2 bg-surface border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-2">Docker Compose YAML</label>
+              <textarea
+                value={composeYaml}
+                onChange={(e) => setComposeYaml(e.target.value)}
+                className="w-full h-64 px-3 py-2 bg-surface border border-border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder="version: '3.8'
+services:
+  ..."
+              />
+            </div>
+            
+            {deployResult && (
+              <div className={`p-3 rounded-lg ${deployResult.success ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>
+                <p className={`font-medium ${deployResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                  {deployResult.success ? '✅ ' : '❌ '}{deployResult.message}
+                </p>
+                {deployResult.output && (
+                  <pre className="mt-2 text-xs text-muted overflow-auto max-h-32">{deployResult.output}</pre>
+                )}
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setDeployModal(false);
+                  setDeployResult(null);
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeployStack}
+                disabled={deploying || !stackName.trim() || !composeYaml.trim()}
+                className="btn btn-primary"
+              >
+                {deploying ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Deploying...
+                  </>
+                ) : (
+                  <>
+                    <Rocket size={16} />
+                    Deploy
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </DraggableWindow>
+      )}
     </div>
   );
 }
+
 
 function ContainerCard({ 
   container, 

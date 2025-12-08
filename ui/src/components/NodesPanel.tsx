@@ -2,13 +2,33 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchNodes, registerNode } from "@/lib/api";
-import { Server, Cpu, HardDrive, MemoryStick, Plus, X, Copy, Check, Terminal } from "lucide-react";
+import { fetchNodes, registerNode, renameNode } from "@/lib/api";
+import { Server, Cpu, HardDrive, MemoryStick, Plus, X, Copy, Check, Terminal, Edit2 } from "lucide-react";
 import { AddNodeModal } from "./AddNodeModal";
+
+const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
+
+interface ServerInfo {
+  cpu_cores: number;
+  memory_total_gb: number;
+  disk_total_gb: number;
+  disk_free_gb: number;
+}
 
 interface NodesPanelProps {
   selectedNode: string | null;
   onSelectNode: (node: string | null) => void;
+}
+
+async function fetchServerInfo(): Promise<Record<string, ServerInfo>> {
+  try {
+    const res = await fetch(`${METRICS_API}/api/servers/info`);
+    if (!res.ok) throw new Error("Failed");
+    const data = await res.json();
+    return data.servers || {};
+  } catch {
+    return {};
+  }
 }
 
 export function NodesPanel({ selectedNode, onSelectNode }: NodesPanelProps) {
@@ -20,6 +40,26 @@ export function NodesPanel({ selectedNode, onSelectNode }: NodesPanelProps) {
     queryKey: ["nodes"],
     queryFn: () => fetchNodes(),
   });
+
+  // Fetch server metrics from AncientReport
+  const { data: serverInfo = {} } = useQuery({
+    queryKey: ["servers-info"],
+    queryFn: fetchServerInfo,
+    refetchInterval: 30000,
+  });
+
+  // Rename mutation
+  const renameMutation = useMutation({
+    mutationFn: ({ hostname, displayName }: { hostname: string; displayName: string }) => 
+      renameNode(hostname, displayName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["nodes"] });
+    },
+  });
+
+  const handleRenameNode = (hostname: string, newName: string) => {
+    renameMutation.mutate({ hostname, displayName: newName });
+  };
 
   if (isLoading) {
     return (
@@ -75,8 +115,10 @@ export function NodesPanel({ selectedNode, onSelectNode }: NodesPanelProps) {
             <NodeCard
               key={node.hostname}
               node={node}
+              serverInfo={serverInfo[node.hostname]}
               isSelected={selectedNode === node.hostname}
               onSelect={() => onSelectNode(node.hostname)}
+              onRename={handleRenameNode}
             />
           ))
         )}
@@ -233,14 +275,35 @@ docker run -d --name metalhive-agent \\
 
 function NodeCard({ 
   node, 
+  serverInfo,
   isSelected, 
-  onSelect 
+  onSelect,
+  onRename
 }: { 
   node: any; 
+  serverInfo?: ServerInfo;
   isSelected: boolean;
   onSelect: () => void;
+  onRename: (hostname: string, newName: string) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(node.display_name || node.hostname);
   const isOnline = node.online !== false;
+  
+  const handleRename = () => {
+    if (editName.trim() && editName !== node.display_name) {
+      onRename(node.hostname, editName.trim());
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleRename();
+    if (e.key === 'Escape') {
+      setEditName(node.display_name || node.hostname);
+      setIsEditing(false);
+    }
+  };
   
   return (
     <div
@@ -257,8 +320,33 @@ function NodeCard({
             <Server className={isOnline ? "text-green-500" : "text-red-500"} size={20} />
           </div>
           <div>
-            <h3 className="font-semibold">{node.hostname}</h3>
-            <p className="text-xs text-muted">{node.ip || node.agent_id || "No IP"}</p>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={handleRename}
+                onKeyDown={handleKeyDown}
+                onClick={(e) => e.stopPropagation()}
+                className="input input-sm w-32 text-sm font-semibold"
+                autoFocus
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">{node.display_name || node.hostname}</h3>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsEditing(true);
+                  }}
+                  className="text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Rename node"
+                >
+                  <Edit2 size={12} />
+                </button>
+              </div>
+            )}
+            <p className="text-xs text-muted">{node.hostname !== node.display_name && node.display_name ? node.hostname + ' • ' : ''}{node.ip || node.agent_id || "No IP"}</p>
           </div>
         </div>
       </div>
@@ -282,22 +370,28 @@ function NodeCard({
         </div>
       )}
 
-      {/* Stats */}
+      {/* Stats - Now using AncientReport data */}
       <div className="grid grid-cols-3 gap-3 pt-4 border-t border-border">
         <div className="text-center">
           <Cpu className="mx-auto text-muted mb-1" size={16} />
           <p className="text-xs text-muted">CPU</p>
-          <p className="text-sm font-medium">--</p>
+          <p className="text-sm font-medium">
+            {serverInfo?.cpu_cores ? `${serverInfo.cpu_cores} cores` : "--"}
+          </p>
         </div>
         <div className="text-center">
           <MemoryStick className="mx-auto text-muted mb-1" size={16} />
           <p className="text-xs text-muted">Memory</p>
-          <p className="text-sm font-medium">--</p>
+          <p className="text-sm font-medium">
+            {serverInfo?.memory_total_gb ? `${serverInfo.memory_total_gb.toFixed(1)} GB` : "--"}
+          </p>
         </div>
         <div className="text-center">
           <HardDrive className="mx-auto text-muted mb-1" size={16} />
           <p className="text-xs text-muted">Disk</p>
-          <p className="text-sm font-medium">--</p>
+          <p className="text-sm font-medium">
+            {serverInfo?.disk_free_gb ? `${serverInfo.disk_free_gb.toFixed(0)} GB free` : "--"}
+          </p>
         </div>
       </div>
     </div>

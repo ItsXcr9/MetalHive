@@ -17,6 +17,9 @@ services:
       dockerfile: Dockerfile
     container_name: metalhive-agent
     hostname: ${HOSTNAME:-agent}
+    # Required for nsenter to access host PID namespace and execute commands on host
+    pid: host               # Share host's PID namespace (required for nsenter -t 1)
+    privileged: true        # Required for nsenter to enter host namespaces
     environment:
       TZ: ${TZ:-UTC}
       # MetalHive Central Server
@@ -28,6 +31,10 @@ services:
       MDNS_ENABLED: "false"
       METRICS_INTERVAL: "10"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # HiveVault Configuration Sync
+      VAULT_SYNC_ENABLED: ${VAULT_SYNC_ENABLED:-true}
+      VAULT_SYNC_INTERVAL: ${VAULT_SYNC_INTERVAL:-60}
+      VAULT_NAMESPACES: ${VAULT_NAMESPACES:-/global/,/production/}
     volumes:
       # Docker container monitoring & management
       - /var/run/docker.sock:/var/run/docker.sock:rw

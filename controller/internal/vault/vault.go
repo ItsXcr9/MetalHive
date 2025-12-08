@@ -62,8 +62,22 @@ func (v *HiveVault) Set(ctx context.Context, path, value string, isSecret bool) 
 		return err
 	}
 
+	// Extract namespace and key from path
+	parts := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 2)
+	namespace := "/"
+	keyName := path
+	if len(parts) >= 2 {
+		namespace = "/" + parts[0]
+		keyName = parts[1]
+	}
+
 	// Log to ClickHouse for history
-	// TODO: Insert into config_history table
+	if v.clickhouse != nil {
+		err := v.clickhouse.InsertConfigHistory(ctx, namespace, keyName, value, entry.UpdatedBy, "set", isSecret)
+		if err != nil {
+			log.Warn().Err(err).Str("path", path).Msg("Failed to log config change to ClickHouse")
+		}
+	}
 
 	log.Info().
 		Str("path", path).
@@ -101,6 +115,23 @@ func (v *HiveVault) Delete(ctx context.Context, path string) error {
 
 	if err := v.redis.Del(ctx, key).Err(); err != nil {
 		return err
+	}
+
+	// Extract namespace and key from path
+	parts := strings.SplitN(strings.TrimPrefix(path, "/"), "/", 2)
+	namespace := "/"
+	keyName := path
+	if len(parts) >= 2 {
+		namespace = "/" + parts[0]
+		keyName = parts[1]
+	}
+
+	// Log deletion to ClickHouse for history
+	if v.clickhouse != nil {
+		err := v.clickhouse.InsertConfigHistory(ctx, namespace, keyName, "", "system", "delete", false)
+		if err != nil {
+			log.Warn().Err(err).Str("path", path).Msg("Failed to log config deletion to ClickHouse")
+		}
 	}
 
 	log.Info().Str("path", path).Msg("Config deleted")

@@ -104,9 +104,19 @@ async fn handle_command_message(
                 "Received command request"
             );
             
-            let result = execute_command(&hostname, &request).await;
+            // Use streaming execution for real-time output
+            let output_subject = format!("metalhive.output.{}", request.execution_id);
+            let nats_clone = nats.clone();
+            let hostname_clone = hostname.clone();
             
-            // Publish result
+            let result = execute_command_streaming_nats(
+                &hostname,
+                &request,
+                &nats_clone,
+                &output_subject,
+            ).await;
+            
+            // Publish final result
             let result_subject = format!("metalhive.results.{}", request.execution_id);
             if let Ok(payload) = serde_json::to_vec(&result) {
                 if let Err(e) = nats.publish(result_subject, bytes::Bytes::from(payload)).await {
@@ -131,12 +141,29 @@ pub async fn execute_command(hostname: &str, request: &CommandRequest) -> Comman
         request.command.clone()
     };
     
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(&shell_cmd);
+    // Use nsenter to execute in the host's namespace (PID 1)
+    // This requires --privileged or specific capabilities and --pid=host
+    let mut cmd = Command::new("nsenter");
+    cmd.args([
+        "-t", "1",           // Target PID 1 (host's init process)
+        "-m",                // Mount namespace
+        "-u",                // UTS namespace (hostname)
+        "-i",                // IPC namespace
+        "-n",                // Network namespace
+        "-p",                // PID namespace
+        "--",                // End of nsenter args
+        "/bin/sh", "-c", &shell_cmd,  // Run shell command on host
+    ]);
     
     // Set working directory if specified
     if let Some(ref dir) = request.working_dir {
-        cmd.current_dir(dir);
+        // For nsenter, we need to cd inside the command
+        let shell_cmd_with_cd = format!("cd {} && {}", dir, shell_cmd);
+        cmd = Command::new("nsenter");
+        cmd.args([
+            "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+            "/bin/sh", "-c", &shell_cmd_with_cd,
+        ]);
     }
     
     // Set environment variables
@@ -235,12 +262,12 @@ where
         request.command.clone()
     };
     
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(&shell_cmd);
-    
-    if let Some(ref dir) = request.working_dir {
-        cmd.current_dir(dir);
-    }
+    // Use nsenter to execute in the host's namespace (PID 1)
+    let mut cmd = Command::new("nsenter");
+    cmd.args([
+        "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+        "/bin/sh", "-c", &shell_cmd,
+    ]);
     
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
@@ -289,6 +316,131 @@ where
                     Ok(Some(line)) => {
                         on_output(&line, true);
                         stderr_output.push_str(&line);
+                        stderr_output.push('\n');
+                    }
+                    Ok(None) => {}
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+    
+    let status = child.wait().await;
+    let completed_at = chrono::Utc::now();
+    
+    CommandResult {
+        execution_id: request.execution_id.clone(),
+        hostname: hostname.to_string(),
+        exit_code: status.map(|s| s.code().unwrap_or(-1)).unwrap_or(-1),
+        stdout: stdout_output,
+        stderr: stderr_output,
+        started_at,
+        completed_at,
+        duration_ms: (completed_at - started_at).num_milliseconds() as u64,
+    }
+}
+
+/// Output line message for streaming
+#[derive(Debug, serde::Serialize)]
+pub struct OutputLine {
+    pub execution_id: String,
+    pub hostname: String,
+    pub line: String,
+    pub is_stderr: bool,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+/// Execute a command and stream output via NATS
+pub async fn execute_command_streaming_nats(
+    hostname: &str,
+    request: &CommandRequest,
+    nats: &async_nats::Client,
+    output_subject: &str,
+) -> CommandResult {
+    let started_at = chrono::Utc::now();
+    let execution_id = request.execution_id.clone();
+    let hostname_str = hostname.to_string();
+    
+    let shell_cmd = if request.use_sudo {
+        format!("sudo {}", request.command)
+    } else {
+        request.command.clone()
+    };
+    
+    // Use nsenter to execute in the host's namespace (PID 1)
+    let mut cmd = Command::new("nsenter");
+    cmd.args([
+        "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+        "/bin/sh", "-c", &shell_cmd,
+    ]);
+    
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            let completed_at = chrono::Utc::now();
+            return CommandResult {
+                execution_id: request.execution_id.clone(),
+                hostname: hostname.to_string(),
+                exit_code: -1,
+                stdout: String::new(),
+                stderr: format!("Failed to spawn process: {}", e),
+                started_at,
+                completed_at,
+                duration_ms: (completed_at - started_at).num_milliseconds() as u64,
+            };
+        }
+    };
+    
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+    
+    let mut stdout_output = String::new();
+    let mut stderr_output = String::new();
+    
+    loop {
+        tokio::select! {
+            line = stdout_reader.next_line() => {
+                match line {
+                    Ok(Some(line_content)) => {
+                        // Publish line to NATS
+                        let output_line = OutputLine {
+                            execution_id: execution_id.clone(),
+                            hostname: hostname_str.clone(),
+                            line: line_content.clone(),
+                            is_stderr: false,
+                            timestamp: chrono::Utc::now(),
+                        };
+                        if let Ok(payload) = serde_json::to_vec(&output_line) {
+                            let _ = nats.publish(output_subject.to_string(), bytes::Bytes::from(payload)).await;
+                        }
+                        stdout_output.push_str(&line_content);
+                        stdout_output.push('\n');
+                    }
+                    Ok(None) => break,
+                    Err(_) => break,
+                }
+            }
+            line = stderr_reader.next_line() => {
+                match line {
+                    Ok(Some(line_content)) => {
+                        // Publish line to NATS
+                        let output_line = OutputLine {
+                            execution_id: execution_id.clone(),
+                            hostname: hostname_str.clone(),
+                            line: line_content.clone(),
+                            is_stderr: true,
+                            timestamp: chrono::Utc::now(),
+                        };
+                        if let Ok(payload) = serde_json::to_vec(&output_line) {
+                            let _ = nats.publish(output_subject.to_string(), bytes::Bytes::from(payload)).await;
+                        }
+                        stderr_output.push_str(&line_content);
                         stderr_output.push('\n');
                     }
                     Ok(None) => {}

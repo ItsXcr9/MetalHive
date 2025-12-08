@@ -8,6 +8,7 @@ pub mod executor;
 pub mod health;
 pub mod metrics;
 pub mod nats_client;
+pub mod vault;
 
 pub use config::AgentConfig;
 
@@ -18,4 +19,6 @@ pub struct AgentState {
     pub labels: std::collections::HashMap<String, String>,
     pub docker_client: bollard::Docker,
     pub nats_client: Option<async_nats::Client>,
+    /// HiveVault configuration cache
+    pub vault_cache: std::sync::Arc<tokio::sync::RwLock<vault::VaultCache>>,
 }

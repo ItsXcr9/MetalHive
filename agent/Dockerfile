@@ -2,11 +2,11 @@
 # MetalHive Agent Dockerfile
 # ==============================================================================
 # Multi-stage build for minimal production image
-# Using Debian for build (better SSL) and Alpine for runtime (minimal size)
+# Using Debian for both build and runtime for glibc compatibility
 # ==============================================================================
 
-# Stage 1: Build using Debian (better SSL/network compatibility)
-FROM rust:1.83-slim-bookworm AS builder
+# Stage 1: Build
+FROM rust:1.91-slim-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,20 +25,20 @@ COPY src ./src
 RUN cargo build --release
 
 
-# Stage 2: Runtime (Alpine for minimal size)
-FROM alpine:3.20
+# Stage 2: Runtime (slim Debian for glibc compatibility)
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    docker-cli \
-    avahi-tools \
-    libgcc \
-    && rm -rf /var/cache/apk/*
+    docker.io \
+    libssl3 \
+    avahi-utils \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -g 1000 metalhive && \
-    adduser -u 1000 -G metalhive -s /bin/sh -D metalhive
+RUN groupadd -g 1000 metalhive && \
+    useradd -u 1000 -g metalhive -s /bin/sh metalhive
 
 WORKDIR /app
 
@@ -49,7 +49,6 @@ COPY --from=builder /app/target/release/metalhive-agent /usr/local/bin/metalhive
 RUN chmod +x /usr/local/bin/metalhive-agent
 
 # Note: Agent needs root for Docker socket access
-# In production, use proper Docker group permissions
 USER root
 
 # Health check

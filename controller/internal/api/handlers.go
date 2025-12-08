@@ -10,8 +10,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/websocket/v2"
@@ -42,6 +45,24 @@ func NewHandler(nc *nats.Conn, ch *store.ClickHouseClient, rdb *redis.Client, v 
 	}
 }
 
+// getRegisteredNodeHostnames returns the list of registered node hostnames
+func (h *Handler) getRegisteredNodeHostnames() []string {
+	ctx := context.Background()
+	keys, err := h.redis.Keys(ctx, "node:*").Result()
+	if err != nil {
+		return []string{}
+	}
+	
+	hostnames := make([]string, 0, len(keys))
+	for _, key := range keys {
+		// key format is "node:hostname"
+		if len(key) > 5 {
+			hostnames = append(hostnames, key[5:])
+		}
+	}
+	return hostnames
+}
+
 // SetupRoutes configures all API routes
 func SetupRoutes(app *fiber.App, h *Handler) {
 	// Health check
@@ -59,6 +80,7 @@ func SetupRoutes(app *fiber.App, h *Handler) {
 	nodes.Post("/deploy", h.DeployAgent)       // SSH deploy agent to new server
 	nodes.Post("/test-ssh", h.TestSSHConnection) // Test SSH connection
 	nodes.Delete("/:hostname", h.RemoveNode)
+	nodes.Put("/:hostname", h.RenameNode) // Rename a node
 	nodes.Post("/:hostname/drain", h.DrainNode)
 	nodes.Post("/:hostname/cordon", h.CordonNode)
 	nodes.Post("/:hostname/uncordon", h.UncordonNode)
@@ -82,12 +104,27 @@ func SetupRoutes(app *fiber.App, h *Handler) {
 	})
 	containers.Get("/:id/exec", websocket.New(h.ContainerExec))
 
+	// Stacks - Docker Compose deployment
+	stacks := v1.Group("/stacks")
+	stacks.Post("/deploy", h.DeployStack)
+	stacks.Get("/", h.ListStacks)
+
+
 	// HiveShell - Remote Execution
 	exec := v1.Group("/exec")
 	exec.Post("/run", h.RunCommand)
 	exec.Get("/history", h.GetExecutionHistory)
 	exec.Get("/:id", h.GetExecutionStatus)
 	exec.Post("/:id/cancel", h.CancelExecution)
+	// WebSocket for streaming output
+	exec.Use("/:id/stream", func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+	exec.Get("/:id/stream", websocket.New(h.StreamExecOutput))
 
 	// HiveVault - Configuration
 	config := v1.Group("/config")
@@ -353,6 +390,60 @@ func (h *Handler) RemoveNode(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Node removed", "hostname": hostname})
 }
 
+// RenameNode updates a node's display name
+func (h *Handler) RenameNode(c *fiber.Ctx) error {
+	hostname := c.Params("hostname")
+	ctx := c.Context()
+
+	var payload struct {
+		DisplayName string            `json:"display_name"`
+		Labels      map[string]string `json:"labels"`
+	}
+
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid payload"})
+	}
+
+	if payload.DisplayName == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "display_name is required"})
+	}
+
+	// Get existing node data
+	key := "metalhive:nodes:" + hostname
+	data, err := h.redis.Get(ctx, key).Bytes()
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Node not found"})
+	}
+
+	var node map[string]interface{}
+	if err := json.Unmarshal(data, &node); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to parse node data"})
+	}
+
+	// Update display name
+	node["display_name"] = payload.DisplayName
+	
+	// Update labels if provided
+	if len(payload.Labels) > 0 {
+		node["labels"] = payload.Labels
+	}
+
+	// Save back to Redis
+	updatedData, _ := json.Marshal(node)
+	h.redis.Set(ctx, key, updatedData, 0)
+
+	log.Info().
+		Str("hostname", hostname).
+		Str("display_name", payload.DisplayName).
+		Msg("Node renamed")
+
+	return c.JSON(fiber.Map{
+		"message":      "Node renamed",
+		"hostname":     hostname,
+		"display_name": payload.DisplayName,
+	})
+}
+
 // DrainNode marks a node as draining
 func (h *Handler) DrainNode(c *fiber.Ctx) error {
 	hostname := c.Params("hostname")
@@ -594,13 +685,54 @@ func (h *Handler) RunCommand(c *fiber.Ctx) error {
 		payload.TimeoutSecs = 30
 	}
 
+	// Determine strategy
+	strategy := payload.Strategy
+	if strategy == "" {
+		strategy = "parallel"
+	}
+
+	// Determine target nodes for logging
+	targetNodes := payload.Nodes
+	if len(payload.Containers) > 0 {
+		targetNodes = payload.Containers
+	}
+
+	// Store command execution in ClickHouse
+	ctx := c.Context()
+	err := h.clickhouse.InsertCommandExecution(ctx, executionID, payload.Command, "user", strategy, targetNodes)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to log command execution to ClickHouse")
+	}
+
 	// If containers are specified, execute directly via Docker
 	if len(payload.Containers) > 0 {
 		results := make([]map[string]interface{}, 0)
+		startTime := time.Now()
 		
 		for _, containerID := range payload.Containers {
 			result := executeContainerCommand(containerID, payload.Command, payload.Sudo, payload.TimeoutSecs)
 			results = append(results, result)
+			
+			// Store result in ClickHouse
+			endTime := time.Now()
+			exitCode := 0
+			if ec, ok := result["exit_code"].(int); ok {
+				exitCode = ec
+			}
+			stdout := ""
+			if out, ok := result["output"].(string); ok {
+				stdout = out
+			}
+			stderr := ""
+			if errStr, ok := result["error"].(string); ok {
+				stderr = errStr
+			}
+			durationMs := uint32(endTime.Sub(startTime).Milliseconds())
+			
+			err := h.clickhouse.InsertCommandResult(ctx, executionID, containerID, exitCode, stdout, stderr, startTime, endTime, durationMs)
+			if err != nil {
+				log.Warn().Err(err).Msg("Failed to log command result to ClickHouse")
+			}
 		}
 
 		log.Info().
@@ -629,8 +761,11 @@ func (h *Handler) RunCommand(c *fiber.Ctx) error {
 	cmdJSON, _ := json.Marshal(cmdRequest)
 
 	// Determine target nodes
-	if len(payload.Nodes) == 0 {
-		// Broadcast to all nodes
+	targetNodeCount := len(payload.Nodes)
+	if targetNodeCount == 0 {
+		// Broadcast to all nodes - get count from registered nodes
+		nodes := h.getRegisteredNodeHostnames()
+		targetNodeCount = len(nodes)
 		h.nats.Publish("metalhive.commands.broadcast", cmdJSON)
 	} else {
 		// Send to specific nodes
@@ -643,13 +778,88 @@ func (h *Handler) RunCommand(c *fiber.Ctx) error {
 		Str("execution_id", executionID).
 		Str("command", payload.Command).
 		Strs("nodes", payload.Nodes).
-		Msg("Node command dispatched")
+		Int("target_count", targetNodeCount).
+		Msg("Node command dispatched for streaming")
 
-	return c.Status(202).JSON(fiber.Map{
+	// Start background goroutine to collect results and log to ClickHouse
+	go func() {
+		// Subscribe to results for this execution
+		resultSubject := "metalhive.results." + executionID
+		sub, err := h.nats.SubscribeSync(resultSubject)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to subscribe for background results")
+			return
+		}
+		defer sub.Unsubscribe()
+
+		// Collect results with timeout
+		timeout := time.Duration(payload.TimeoutSecs+10) * time.Second
+		deadline := time.Now().Add(timeout)
+		resultsCount := 0
+
+		for resultsCount < targetNodeCount && time.Now().Before(deadline) {
+			msg, err := sub.NextMsg(time.Until(deadline))
+			if err != nil {
+				break // Timeout or error
+			}
+
+			var result map[string]interface{}
+			if err := json.Unmarshal(msg.Data, &result); err == nil {
+				resultsCount++
+				
+				// Extract fields for ClickHouse
+				hostname := ""
+				if h, ok := result["hostname"].(string); ok {
+					hostname = h
+				}
+				exitCode := 0
+				if ec, ok := result["exit_code"].(float64); ok {
+					exitCode = int(ec)
+				}
+				stdout := ""
+				if out, ok := result["stdout"].(string); ok {
+					stdout = out
+				}
+				stderr := ""
+				if errStr, ok := result["stderr"].(string); ok {
+					stderr = errStr
+				}
+				durationMs := uint32(0)
+				if d, ok := result["duration_ms"].(float64); ok {
+					durationMs = uint32(d)
+				}
+				
+				bgCtx := context.Background()
+				h.clickhouse.InsertCommandResult(bgCtx, executionID, hostname, exitCode, stdout, stderr, time.Now(), time.Now(), durationMs)
+			}
+		}
+
+		// Update execution status to completed
+		status := "completed"
+		if resultsCount == 0 {
+			status = "no_responses"
+		} else if resultsCount < targetNodeCount {
+			status = "partial"
+		}
+		bgCtx := context.Background()
+		h.clickhouse.UpdateCommandExecutionStatus(bgCtx, executionID, status, time.Now())
+
+		log.Info().
+			Str("execution_id", executionID).
+			Int("results_collected", resultsCount).
+			Int("target_count", targetNodeCount).
+			Str("status", status).
+			Msg("Background result collection completed")
+	}()
+
+	// Return immediately with execution_id - client should connect WebSocket for streaming
+	return c.JSON(fiber.Map{
 		"execution_id": executionID,
-		"status":       "dispatched",
+		"status":       "streaming",
 		"command":      payload.Command,
 		"target_type":  "nodes",
+		"target_count": targetNodeCount,
+		"message":      "Connect to WebSocket /api/v1/exec/" + executionID + "/stream for output",
 	})
 }
 
@@ -792,8 +1002,20 @@ func cleanDockerOutput(data []byte) string {
 
 // GetExecutionHistory returns command execution history
 func (h *Handler) GetExecutionHistory(c *fiber.Ctx) error {
-	// TODO: Query ClickHouse for execution history
-	return c.JSON(fiber.Map{"executions": []interface{}{}})
+	ctx := c.Context()
+	limit := 50 // Default limit
+	
+	executions, err := h.clickhouse.GetCommandExecutions(ctx, limit)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get execution history from ClickHouse")
+		return c.JSON(fiber.Map{"executions": []interface{}{}, "error": "Failed to retrieve history"})
+	}
+	
+	if executions == nil {
+		executions = []map[string]interface{}{}
+	}
+	
+	return c.JSON(fiber.Map{"executions": executions, "total": len(executions)})
 }
 
 // GetExecutionStatus returns status of a command execution
@@ -864,8 +1086,20 @@ func (h *Handler) DeleteConfig(c *fiber.Ctx) error {
 // GetConfigHistory returns the history of a config key
 func (h *Handler) GetConfigHistory(c *fiber.Ctx) error {
 	path := c.Params("*")
-	// TODO: Query ClickHouse for config history
-	return c.JSON(fiber.Map{"path": path, "history": []interface{}{}})
+	ctx := c.Context()
+	limit := 50 // Default limit
+	
+	history, err := h.clickhouse.GetConfigHistory(ctx, path, limit)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get config history from ClickHouse")
+		return c.JSON(fiber.Map{"path": path, "history": []interface{}{}, "error": "Failed to retrieve history"})
+	}
+	
+	if history == nil {
+		history = []map[string]interface{}{}
+	}
+	
+	return c.JSON(fiber.Map{"path": path, "history": history, "total": len(history)})
 }
 
 // RollbackConfig rolls back a config to a previous version
@@ -926,22 +1160,46 @@ func (h *Handler) GetAIReports(c *fiber.Ctx) error {
 
 	resp, err := http.Get(aiURL + "/reports")
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to reach AI service")
-		return c.Status(503).JSON(fiber.Map{"error": "AI service unavailable"})
+		log.Warn().Err(err).Msg("AI service unavailable, falling back to ClickHouse")
+		// Fallback to ClickHouse
+		return h.getAIReportsFromClickHouse(c)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 400 {
+		log.Warn().Int("status", resp.StatusCode).Msg("AI service returned error, falling back to ClickHouse")
+		return h.getAIReportsFromClickHouse(c)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to read AI response"})
+		return h.getAIReportsFromClickHouse(c)
 	}
 
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return c.JSON(fiber.Map{"reports": []interface{}{}})
+		return h.getAIReportsFromClickHouse(c)
 	}
 
 	return c.Status(resp.StatusCode).JSON(result)
+}
+
+// getAIReportsFromClickHouse is a fallback method to get reports from ClickHouse
+func (h *Handler) getAIReportsFromClickHouse(c *fiber.Ctx) error {
+	ctx := c.Context()
+	limit := 50
+
+	reports, err := h.clickhouse.GetAIReports(ctx, limit)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get AI reports from ClickHouse")
+		return c.JSON(fiber.Map{"reports": []interface{}{}})
+	}
+
+	if reports == nil {
+		reports = []map[string]interface{}{}
+	}
+
+	return c.JSON(fiber.Map{"reports": reports, "total": len(reports)})
 }
 
 // TriggerAnalysis triggers an AI analysis
@@ -985,19 +1243,58 @@ func (h *Handler) TriggerSystemUpdate(c *fiber.Ctx) error {
 	}
 
 	updateID := uuid.New().String()
-	// TODO: Implement system update logic
+	
+	// Default strategy
+	strategy := payload.Strategy
+	if strategy == "" {
+		strategy = "rolling"
+	}
+	
+	// Default type
+	updateType := payload.Type
+	if updateType == "" {
+		updateType = "security"
+	}
+
+	// Store update in ClickHouse
+	ctx := c.Context()
+	err := h.clickhouse.InsertSystemUpdate(ctx, updateID, updateType, strategy, "user", payload.Nodes)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to log system update to ClickHouse")
+	}
+
+	log.Info().
+		Str("update_id", updateID).
+		Str("type", updateType).
+		Str("strategy", strategy).
+		Strs("nodes", payload.Nodes).
+		Msg("System update initiated")
 
 	return c.Status(202).JSON(fiber.Map{
 		"update_id": updateID,
 		"message":   "Update initiated",
-		"type":      payload.Type,
+		"type":      updateType,
+		"strategy":  strategy,
+		"nodes":     payload.Nodes,
 	})
 }
 
 // GetUpdateHistory returns system update history
 func (h *Handler) GetUpdateHistory(c *fiber.Ctx) error {
-	// TODO: Query ClickHouse for update history
-	return c.JSON(fiber.Map{"updates": []interface{}{}})
+	ctx := c.Context()
+	limit := 50 // Default limit
+
+	updates, err := h.clickhouse.GetSystemUpdates(ctx, limit)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get system updates from ClickHouse")
+		return c.JSON(fiber.Map{"updates": []interface{}{}, "error": "Failed to retrieve updates"})
+	}
+
+	if updates == nil {
+		updates = []map[string]interface{}{}
+	}
+
+	return c.JSON(fiber.Map{"updates": updates, "total": len(updates)})
 }
 
 // WebSocketHandler handles WebSocket connections for real-time updates
@@ -1325,4 +1622,174 @@ func startDockerExec(execID string) (net.Conn, error) {
 	
 	log.Debug().Msg("Docker exec started successfully")
 	return conn, nil
+}
+
+// DeployStack deploys a Docker Compose stack
+func (h *Handler) DeployStack(c *fiber.Ctx) error {
+	var payload struct {
+		Name        string   `json:"name"`
+		ComposeYAML string   `json:"compose_yaml"`
+		Nodes       []string `json:"nodes"` // Target nodes, empty = controller node
+	}
+
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid payload"})
+	}
+
+	if payload.Name == "" || payload.ComposeYAML == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Name and compose_yaml are required"})
+	}
+
+	// Validate YAML structure (basic check)
+	if !strings.Contains(payload.ComposeYAML, "services:") {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid compose file: must contain 'services:'"})
+	}
+
+	stackID := uuid.New().String()
+	
+	// Create temp directory for compose file
+	tmpDir := fmt.Sprintf("/tmp/metalhive-stacks/%s", stackID)
+	composePath := filepath.Join(tmpDir, "docker-compose.yml")
+	
+	// Create directory
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		log.Error().Err(err).Msg("Failed to create stack directory")
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create stack directory"})
+	}
+	
+	// Write compose file
+	if err := os.WriteFile(composePath, []byte(payload.ComposeYAML), 0644); err != nil {
+		log.Error().Err(err).Msg("Failed to write compose file")
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to write compose file"})
+	}
+	
+	// Run docker compose up
+	cmd := exec.Command("docker", "compose", "-f", composePath, "-p", payload.Name, "up", "-d")
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		log.Error().Err(err).Str("output", string(output)).Msg("Failed to deploy stack")
+		return c.Status(500).JSON(fiber.Map{
+			"error":  "Failed to deploy stack",
+			"output": string(output),
+		})
+	}
+
+	log.Info().
+		Str("stack_id", stackID).
+		Str("name", payload.Name).
+		Msg("Stack deployed successfully")
+
+	return c.Status(201).JSON(fiber.Map{
+		"stack_id": stackID,
+		"name":     payload.Name,
+		"message":  "Stack deployed successfully",
+		"output":   string(output),
+	})
+}
+
+// ListStacks returns deployed stacks (docker compose projects)
+func (h *Handler) ListStacks(c *fiber.Ctx) error {
+	// List docker compose projects
+	cmd := exec.Command("docker", "compose", "ls", "--format", "json")
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to list stacks")
+		return c.JSON(fiber.Map{"stacks": []interface{}{}, "error": string(output)})
+	}
+	
+	// Parse JSON output
+	var stacks []map[string]interface{}
+	if err := json.Unmarshal(output, &stacks); err != nil {
+		// Try parsing as newline-separated JSON
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		stacks = make([]map[string]interface{}, 0)
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			var stack map[string]interface{}
+			if err := json.Unmarshal([]byte(line), &stack); err == nil {
+				stacks = append(stacks, stack)
+			}
+		}
+	}
+	
+	return c.JSON(fiber.Map{
+		"stacks": stacks,
+		"total":  len(stacks),
+	})
+}
+
+// StreamExecOutput handles WebSocket streaming of command execution output
+func (h *Handler) StreamExecOutput(c *websocket.Conn) {
+	executionID := c.Params("id")
+	if executionID == "" {
+		c.WriteMessage(websocket.TextMessage, []byte(`{"error":"missing execution_id"}`))
+		c.Close()
+		return
+	}
+
+	log.Info().Str("execution_id", executionID).Msg("WebSocket connected for streaming output")
+
+	// Subscribe to NATS output stream for this execution
+	outputSubject := fmt.Sprintf("metalhive.output.%s", executionID)
+	resultSubject := fmt.Sprintf("metalhive.results.%s", executionID)
+	
+	outputSub, err := h.nats.Subscribe(outputSubject, func(msg *nats.Msg) {
+		// Forward output line to WebSocket
+		if err := c.WriteMessage(websocket.TextMessage, msg.Data); err != nil {
+			log.Error().Err(err).Msg("Failed to write to WebSocket")
+		}
+	})
+	if err != nil {
+		c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to subscribe: %v"}`, err)))
+		c.Close()
+		return
+	}
+	defer outputSub.Unsubscribe()
+
+	// Also subscribe to final result
+	resultChan := make(chan *nats.Msg, 1)
+	resultSub, err := h.nats.Subscribe(resultSubject, func(msg *nats.Msg) {
+		resultChan <- msg
+	})
+	if err != nil {
+		c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to subscribe results: %v"}`, err)))
+		c.Close()
+		return
+	}
+	defer resultSub.Unsubscribe()
+
+	// Keep connection open until command completes or client disconnects
+	// Set a max timeout of 10 minutes for long-running commands
+	timeout := time.After(10 * time.Minute)
+	
+	for {
+		select {
+		case result := <-resultChan:
+			// Send final result and close
+			finalMsg := fmt.Sprintf(`{"type":"complete","data":%s}`, string(result.Data))
+			c.WriteMessage(websocket.TextMessage, []byte(finalMsg))
+			c.Close()
+			return
+		case <-timeout:
+			c.WriteMessage(websocket.TextMessage, []byte(`{"type":"timeout","error":"execution timeout"}`))
+			c.Close()
+			return
+		default:
+			// Check if client disconnected
+			c.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+			_, _, err := c.ReadMessage()
+			if err != nil {
+				if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+					log.Info().Str("execution_id", executionID).Msg("WebSocket client disconnected")
+					return
+				}
+				// Timeout on read is expected, continue loop
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
 }

@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
+import { useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { DashboardStats } from "@/components/DashboardStats";
 import { AncientReportWidget } from "@/components/AncientReportWidget";
 import { FleetOverview } from "@/components/FleetOverview";
+import { fetchNodes } from "@/lib/api";
+
+const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
 
 // Loading component for dynamic chunks
 const PanelLoader = () => (
@@ -46,6 +50,32 @@ type ActivePanel = "dashboard" | "nodes" | "containers" | "shell" | "config" | "
 export default function Home() {
   const [activePanel, setActivePanel] = useState<ActivePanel>("dashboard");
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // Prefetch nodes and server info on mount for instant loading when navigating
+  useEffect(() => {
+    // Preload the NodesPanel component module (code splitting)
+    import("@/components/NodesPanel");
+
+    // Prefetch nodes list
+    queryClient.prefetchQuery({
+      queryKey: ["nodes"],
+      queryFn: fetchNodes,
+      staleTime: 30000,
+    });
+
+    // Prefetch server info from AncientReport
+    queryClient.prefetchQuery({
+      queryKey: ["servers-info"],
+      queryFn: async () => {
+        const res = await fetch(`${METRICS_API}/api/servers/info`);
+        if (!res.ok) return {};
+        const data = await res.json();
+        return data.servers || {};
+      },
+      staleTime: 30000,
+    });
+  }, [queryClient]);
 
   return (
     <div className="flex h-screen bg-background">
@@ -57,7 +87,8 @@ export default function Home() {
         {/* Header */}
         <Header 
           selectedNode={selectedNode} 
-          onNodeChange={setSelectedNode} 
+          onNodeChange={setSelectedNode}
+          onNavigate={(panel) => setActivePanel(panel as ActivePanel)}
         />
 
         {/* Content Area */}

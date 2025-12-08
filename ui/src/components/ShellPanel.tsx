@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { runCommand, fetchNodes, fetchContainers } from "@/lib/api";
+import { runCommand, fetchNodes, fetchContainers, getExecutionHistory } from "@/lib/api";
 import { 
   Send, PlayCircle, Clock, CheckCircle, XCircle, 
-  Server, Box, ChevronDown, ChevronUp, ShieldCheck
+  Server, Box, ChevronDown, ChevronUp, ShieldCheck, Loader2
 } from "lucide-react";
 
 type TargetType = "nodes" | "containers";
@@ -21,6 +21,13 @@ interface Container {
   state: string;
 }
 
+interface StreamingLine {
+  hostname: string;
+  line: string;
+  is_stderr: boolean;
+  timestamp: string;
+}
+
 export function ShellPanel() {
   const [command, setCommand] = useState("");
   const [targetType, setTargetType] = useState<TargetType>("containers");
@@ -31,6 +38,13 @@ export function ShellPanel() {
   const [timeout, setTimeout] = useState(30);
   const [history, setHistory] = useState<CommandEntry[]>([]);
   const [showTargetDropdown, setShowTargetDropdown] = useState(false);
+  
+  // Streaming state
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingOutput, setStreamingOutput] = useState<StreamingLine[]>([]);
+  const [currentExecutionId, setCurrentExecutionId] = useState<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
 
   // Fetch nodes
   const { data: nodesData } = useQuery({
@@ -44,6 +58,35 @@ export function ShellPanel() {
     queryFn: () => fetchContainers(),
   });
 
+  // Load persisted execution history on mount
+  const { data: historyData } = useQuery({
+    queryKey: ["executionHistory"],
+    queryFn: () => getExecutionHistory(),
+    staleTime: 30000,
+  });
+
+  // Initialize history from persisted data on first load
+  useEffect(() => {
+    if (historyData?.executions && history.length === 0) {
+      const persistedHistory: CommandEntry[] = historyData.executions.slice(0, 10).map((exec: any) => ({
+        id: exec.id,
+        command: exec.command,
+        status: exec.status === "completed" ? "completed" : exec.status === "failed" ? "failed" : "pending",
+        timestamp: exec.started_at || new Date().toISOString(),
+        targetType: exec.target_nodes?.length > 0 ? "nodes" : "containers",
+        targets: exec.target_nodes || [],
+        results: (exec.results || []).map((r: any) => ({
+          hostname: r.hostname || r.node_hostname || "unknown",
+          exitCode: r.exit_code ?? 0,
+          stdout: r.stdout || "",
+          stderr: r.stderr || "",
+          duration: r.duration_ms || 0,
+        })),
+      }));
+      setHistory(persistedHistory);
+    }
+  }, [historyData]);
+
   const nodes: Node[] = nodesData?.nodes || [];
   const containers: Container[] = (containersData?.containers || []).filter(
     (c: Container) => c.state === "running"
@@ -52,25 +95,111 @@ export function ShellPanel() {
   const mutation = useMutation({
     mutationFn: runCommand,
     onSuccess: (data) => {
-      const entry: CommandEntry = {
-        id: data.execution_id,
-        command: command,
-        status: data.status === "completed" ? "completed" : "running",
-        timestamp: new Date().toISOString(),
-        targetType: data.target_type || targetType,
-        targets: targetType === "containers" ? selectedContainers : selectedNodes,
-        results: data.results?.map(r => ({
-          hostname: r.container,
-          exitCode: r.exit_code || 0,
-          stdout: r.output || "",
-          stderr: r.error || "",
-          duration: 0,
-        })) || [],
-      };
-      setHistory((prev) => [entry, ...prev]);
+      const savedCommand = command;
       setCommand("");
+      
+      // If status is "streaming", connect WebSocket for real-time output
+      if (data.status === "streaming") {
+        startStreaming(data.execution_id, savedCommand, selectedNodes);
+      } else {
+        // Container commands or completed - add to history with results
+        const entry: CommandEntry = {
+          id: data.execution_id,
+          command: savedCommand,
+          status: data.status === "completed" ? "completed" : data.status === "failed" || data.status === "no_responses" ? "failed" : "running",
+          timestamp: new Date().toISOString(),
+          targetType: data.target_type || targetType,
+          targets: targetType === "containers" ? selectedContainers : selectedNodes,
+          results: data.results?.map((r: any) => ({
+            hostname: r.hostname || r.container || "unknown",
+            exitCode: r.exit_code ?? 0,
+            stdout: r.stdout || r.output || "",
+            stderr: r.stderr || r.error || "",
+            duration: r.duration_ms || 0,
+          })) || [],
+        };
+        setHistory((prev) => [entry, ...prev]);
+      }
     },
   });
+
+  // Start WebSocket streaming for an execution
+  const startStreaming = (executionId: string, cmd: string, targets: string[]) => {
+    setIsStreaming(true);
+    setCurrentExecutionId(executionId);
+    setStreamingOutput([]);
+    
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/api/v1/exec/${executionId}/stream`;
+    
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "complete") {
+          // Command completed - finalize and add to history
+          setIsStreaming(false);
+          const result = data.data;
+          const entry: CommandEntry = {
+            id: executionId,
+            command: cmd,
+            status: result.exit_code === 0 ? "completed" : "failed",
+            timestamp: new Date().toISOString(),
+            targetType: "nodes",
+            targets: targets,
+            results: [{
+              hostname: result.hostname,
+              exitCode: result.exit_code,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              duration: result.duration_ms || 0,
+            }],
+          };
+          setHistory((prev) => [entry, ...prev]);
+          setStreamingOutput([]);
+        } else if (data.type === "timeout") {
+          setIsStreaming(false);
+          setStreamingOutput((prev) => [...prev, {
+            hostname: "system",
+            line: "⚠️ Execution timeout",
+            is_stderr: true,
+            timestamp: new Date().toISOString(),
+          }]);
+        } else if (data.line !== undefined) {
+          // Streaming output line
+          setStreamingOutput((prev) => [...prev, {
+            hostname: data.hostname,
+            line: data.line,
+            is_stderr: data.is_stderr,
+            timestamp: data.timestamp,
+          }]);
+          // Auto-scroll
+          if (outputRef.current) {
+            outputRef.current.scrollTop = outputRef.current.scrollHeight;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to parse WebSocket message:", e);
+      }
+    };
+    
+    ws.onerror = () => {
+      setIsStreaming(false);
+      setStreamingOutput((prev) => [...prev, {
+        hostname: "system",
+        line: "❌ WebSocket connection error",
+        is_stderr: true,
+        timestamp: new Date().toISOString(),
+      }]);
+    };
+    
+    ws.onclose = () => {
+      setIsStreaming(false);
+      wsRef.current = null;
+    };
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,6 +421,32 @@ export function ShellPanel() {
           <p className="text-xs text-yellow-400">⚠️ Select at least one {targetType.slice(0, -1)} to execute the command</p>
         )}
       </form>
+
+      {/* Streaming Output (shown while command is running on nodes) */}
+      {isStreaming && (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-3">
+            <Loader2 className="animate-spin text-cyan-400" size={18} />
+            <h3 className="text-sm font-semibold text-cyan-400">Streaming Output</h3>
+            <span className="text-xs text-muted ml-auto">Execution ID: {currentExecutionId?.slice(0, 8)}...</span>
+          </div>
+          <div 
+            ref={outputRef}
+            className="bg-black/40 rounded-lg p-3 font-mono text-xs max-h-64 overflow-y-auto"
+          >
+            {streamingOutput.length === 0 ? (
+              <span className="text-muted">Waiting for output...</span>
+            ) : (
+              streamingOutput.map((line, idx) => (
+                <div key={idx} className={`${line.is_stderr ? 'text-red-400' : 'text-green-400'}`}>
+                  <span className="text-muted mr-2">[{line.hostname}]</span>
+                  {line.line}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Execution History */}
       <div className="space-y-4">

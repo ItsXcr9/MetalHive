@@ -46,6 +46,13 @@ export async function removeNode(hostname: string) {
   });
 }
 
+export async function renameNode(hostname: string, displayName: string) {
+  return fetchAPI<{ message: string; hostname: string; display_name: string }>(`/nodes/${hostname}`, {
+    method: "PUT",
+    body: JSON.stringify({ display_name: displayName }),
+  });
+}
+
 /**
  * Containers API
  */
@@ -122,6 +129,11 @@ export async function getExecutionHistory() {
 /**
  * HiveVault API
  */
+export async function listConfigs(namespace?: string) {
+  const params = namespace ? `?namespace=${encodeURIComponent(namespace)}` : "";
+  return fetchAPI<{ configs: any[]; total: number }>(`/config${params}`);
+}
+
 export async function getConfig(path: string) {
   return fetchAPI<{ path: string; value: string }>(`/config/${path}`);
 }
@@ -138,6 +150,12 @@ export async function deleteConfig(path: string) {
     method: "DELETE",
   });
 }
+
+export async function getConfigHistory(path?: string) {
+  const endpoint = path ? `/config/history/${path}` : "/config/history/";
+  return fetchAPI<{ history: any[]; total: number }>(endpoint);
+}
+
 
 /**
  * Metrics API
@@ -194,4 +212,27 @@ export async function triggerSystemUpdate(data: {
 
 export async function getUpdateHistory() {
   return fetchAPI<{ updates: any[] }>("/system/updates");
+}
+
+/**
+ * Stacks API
+ */
+export async function deployStack(data: {
+  name: string;
+  compose_yaml: string;
+  nodes?: string[];
+}) {
+  return fetchAPI<{
+    stack_id: string;
+    name: string;
+    message: string;
+    output?: string;
+  }>("/stacks/deploy", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function listStacks() {
+  return fetchAPI<{ stacks: any[]; total: number }>("/stacks");
 }

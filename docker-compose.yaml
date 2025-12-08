@@ -31,23 +31,22 @@ services:
     restart: unless-stopped
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24-alpine
+    image: clickhouse/clickhouse-server:latest
     container_name: metalhive-clickhouse
     ports:
       - "8124:8123"   # HTTP interface (changed to 8124)
       - "9001:9000"   # Native protocol (changed to 9001)
     volumes:
-      - ./infra/clickhouse/config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
       - ./infra/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - clickhouse-data:/var/lib/clickhouse
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
+      TZ: Asia/Tehran
       CLICKHOUSE_DB: metalhive
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    networks:
+      - default
     restart: unless-stopped
 
   dragonfly:
@@ -151,16 +150,28 @@ services:
       context: ./agent
       dockerfile: Dockerfile
     container_name: metalhive-agent-dev
-    privileged: true
+    hostname: xcr9
+    # Required for nsenter to access host PID namespace and execute commands on host
+    pid: host               # Share host's PID namespace (required for nsenter -t 1)
+    privileged: true        # Required for nsenter to enter host namespaces
     environment:
-      - AGENT_ID=dev-node-01
-      - AGENT_LABELS=env=development,role=dev
-      - CONTROLLER_URL=http://controller:8080
-      - NATS_URL=nats://nats:4222
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - MDNS_ENABLED=false
+      TZ: ${TZ:-Asia/Tehran}
+      AGENT_ID: dev-node-01
+      AGENT_LABELS: env=development,role=dev
+      CONTROLLER_URL: http://controller:8080
+      NATS_URL: nats://nats:4222
+      DOCKER_HOST: unix:///var/run/docker.sock
+      MDNS_ENABLED: "false"
+      METRICS_INTERVAL: "10"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # HiveVault Configuration Sync
+      VAULT_SYNC_ENABLED: "true"
+      VAULT_SYNC_INTERVAL: "60"
+      VAULT_NAMESPACES: "/global/,/production/"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       - controller
       - nats
