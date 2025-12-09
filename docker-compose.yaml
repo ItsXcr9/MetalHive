@@ -18,8 +18,8 @@ services:
       - "--config=/etc/nats/nats-server.conf"
       - "--jetstream"
     ports:
-      - "4223:4222"   # Client connections (changed to 4223)
-      - "8223:8222"   # HTTP monitoring (changed to 8223)
+      - "4223:4222"   # Client connections (internal/bound to 0.0.0.0 for agents) - Consider restricting if possible
+      - "127.0.0.1:8223:8222"   # HTTP monitoring (Security Fix: Localhost only)
     volumes:
       - ./infra/nats/nats-server.conf:/etc/nats/nats-server.conf:ro
       - nats-data:/data
@@ -34,8 +34,8 @@ services:
     image: clickhouse/clickhouse-server:latest
     container_name: metalhive-clickhouse
     ports:
-      - "8124:8123"   # HTTP interface (changed to 8124)
-      - "9001:9000"   # Native protocol (changed to 9001)
+      - "127.0.0.1:8124:8123"   # HTTP interface (Security Fix: Localhost only)
+      - "127.0.0.1:9001:9000"   # Native protocol (Security Fix: Localhost only)
     volumes:
       - ./infra/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - clickhouse-data:/var/lib/clickhouse
@@ -146,6 +146,8 @@ services:
     ports:
       - "3002:3000"   # Changed to 3002 to avoid conflict
     environment:
+      - UI_USERNAME=admin
+      - UI_PASSWORD=metalhive-secure
       - NEXT_PUBLIC_API_URL=http://65.109.200.75:8080
       - NEXT_PUBLIC_WS_URL=ws://65.109.200.75:8080
       - NEXT_PUBLIC_ANCIENTREPORT_API=http://65.109.200.75:6080

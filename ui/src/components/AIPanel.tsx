@@ -4,6 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { askAI } from "@/lib/api";
 import { Brain, Send, Sparkles, AlertTriangle, Lightbulb, Loader2, Bot, User, ShieldCheck } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/atom-one-dark.css"; // Import styles for code highlighting
 
 interface AIPanelProps {
   compact?: boolean;
@@ -36,7 +40,7 @@ export function AIPanel({ compact = false }: AIPanelProps) {
       setMessages((prev) => [
         ...prev,
         {
-          role: "assistant",
+          role: "assistant", // Logic for role
           content: data.response || "I couldn't generate a response. Please try again.",
           recommendations: data.recommendations,
         },
@@ -64,6 +68,49 @@ export function AIPanel({ compact = false }: AIPanelProps) {
     mutation.mutate({ query: userMessage });
   };
 
+  const markdownComponents = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    p: ({ ...props }: any) => <p className="mb-2 leading-relaxed" {...props} />,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ul: ({ ...props }: any) => <ul className="list-disc list-inside mb-2 space-y-1 ml-1" {...props} />,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ol: ({ ...props }: any) => <ol className="list-decimal list-inside mb-2 space-y-1 ml-1" {...props} />,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    li: ({ ...props }: any) => <li className="text-secondary/90 pl-1 marker:text-indigo-400" {...props} />,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h1: ({ ...props }: any) => <h1 className="text-xl font-bold text-white mb-3 mt-4 first:mt-0 pb-2 border-b border-white/10" {...props} />,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h2: ({ ...props }: any) => <h2 className="text-lg font-bold text-white mb-2 mt-3" {...props} />,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    h3: ({ ...props }: any) => <h3 className="text-base font-bold text-indigo-300 mb-2 mt-2" {...props} />,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    strong: ({ ...props }: any) => <strong className="text-white font-semibold" {...props} />,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    code: ({ inline, className, children, ...props }: any) => {
+      const match = /language-(\w+)/.exec(className || "");
+      const isMultiLine = String(children).includes('\n');
+      
+      if (!inline && match) {
+         return (
+          <div className="relative group my-3 rounded-lg overflow-hidden border border-white/10 bg-[#282c34] shadow-lg">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/5">
+                 <span className="text-xs text-secondary/70 font-mono uppercase tracking-wider">{match[1]}</span>
+            </div>
+            <div className="p-3 overflow-x-auto text-sm font-mono">
+                 <code className={className} {...props}>{children}</code>
+            </div>
+          </div>
+         );
+      }
+      return (
+          <code className={`${!inline ? 'block bg-[#282c34] p-2 rounded-lg' : 'bg-white/10 text-cyan-200 px-1.5 py-0.5 rounded'} text-xs font-mono`} {...props}>
+            {children}
+          </code>
+      )
+    }
+  };
+
+
   if (compact) {
     return (
       <div className="space-y-4">
@@ -77,7 +124,13 @@ export function AIPanel({ compact = false }: AIPanelProps) {
                   : "bg-surface border-border text-secondary mr-4"
               }`}
             >
-              {msg.content}
+               <ReactMarkdown 
+                remarkPlugins={[remarkGfm]} 
+                rehypePlugins={[rehypeHighlight]}
+                components={markdownComponents}
+               >
+                 {msg.content}
+               </ReactMarkdown>
             </div>
           ))}
         </div>
@@ -174,10 +227,22 @@ export function AIPanel({ compact = false }: AIPanelProps) {
                 className={`inline-block p-4 rounded-2xl shadow-md backdrop-blur-md ${
                   msg.role === "user"
                     ? "bg-blue-600/20 border border-blue-500/30 text-white rounded-tr-sm"
-                    : "bg-surface border border-white/10 text-secondary rounded-tl-sm"
+                    : "bg-surface border border-white/10 text-secondary rounded-tl-sm w-full"
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                {msg.role === "user" ? (
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                ) : (
+                    <div className="markdown-content text-sm">
+                        <ReactMarkdown 
+                            remarkPlugins={[remarkGfm]} 
+                            rehypePlugins={[rehypeHighlight]}
+                            components={markdownComponents}
+                        >
+                            {msg.content}
+                        </ReactMarkdown>
+                    </div>
+                )}
               </div>
 
               {msg.recommendations && msg.recommendations.length > 0 && (
