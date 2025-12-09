@@ -94,20 +94,42 @@ async fn handle_command_message(
     nats: &async_nats::Client,
     msg: async_nats::Message,
 ) {
-    let hostname = state.read().await.hostname.clone();
+    let state_read = state.read().await;
+    let hostname = state_read.hostname.clone();
+    let vault_cache = state_read.vault_cache.clone();
+    drop(state_read);
     
     match serde_json::from_slice::<CommandRequest>(&msg.payload) {
-        Ok(request) => {
+        Ok(mut request) => {
             info!(
                 execution_id = %request.execution_id,
                 command = %request.command,
                 "Received command request"
             );
             
+            // Inject vault env vars: prepend source command to load .env_vault
+            // This ensures all vault configs are available as shell env vars
+            // Use '.' (dot) instead of 'source' for POSIX shell compatibility
+            let original_cmd = request.command.clone();
+            request.command = format!(
+                ". /etc/metalhive/.env_vault 2>/dev/null || true; {}",
+                original_cmd
+            );
+            
+            // Also merge vault cache into env_vars for direct process injection
+            let vault_env = vault_cache.read().await.as_env_map();
+            if !vault_env.is_empty() {
+                let mut merged_env = vault_env;
+                // Request-specified env vars take precedence over vault
+                if let Some(req_env) = &request.env_vars {
+                    merged_env.extend(req_env.clone());
+                }
+                request.env_vars = Some(merged_env);
+            }
+            
             // Use streaming execution for real-time output
             let output_subject = format!("metalhive.output.{}", request.execution_id);
             let nats_clone = nats.clone();
-            let hostname_clone = hostname.clone();
             
             let result = execute_command_streaming_nats(
                 &hostname,

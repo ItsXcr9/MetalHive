@@ -19,6 +19,24 @@ pub struct VaultCache {
     pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+impl VaultCache {
+    /// Convert configs to environment variable format (extracts last path segment as var name)
+    pub fn as_env_map(&self) -> HashMap<String, String> {
+        self.configs
+            .iter()
+            .map(|(path, value)| {
+                let env_name = path
+                    .split('/')
+                    .last()
+                    .unwrap_or(path)
+                    .to_uppercase()
+                    .replace('-', "_");
+                (env_name, value.clone())
+            })
+            .collect()
+    }
+}
+
 /// Vault client for fetching configs from controller
 pub struct VaultClient {
     controller_url: String,
@@ -166,6 +184,45 @@ impl VaultClient {
         info!(path = %path, count = env_vars.len(), "Wrote env file");
         Ok(())
     }
+
+    /// Write configs to host filesystem via nsenter (for use from container)
+    pub async fn write_env_file_to_host(&self, host_path: &str) -> Result<()> {
+        let env_vars = self.as_env_vars().await;
+        if env_vars.is_empty() {
+            debug!("No env vars to write");
+            return Ok(());
+        }
+
+        // Build the .env_vault content
+        let content: String = env_vars
+            .iter()
+            .map(|(k, v)| format!("export {}=\"{}\"", k, v.replace('"', "\\\"")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        // Create directory and write file using nsenter to access host filesystem
+        let script = format!(
+            r#"mkdir -p $(dirname {path}) && cat > {path} << 'HIVEVAULT_EOF'
+{content}
+HIVEVAULT_EOF"#,
+            path = host_path,
+            content = content
+        );
+
+        let output = tokio::process::Command::new("nsenter")
+            .args(["-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "/bin/sh", "-c", &script])
+            .output()
+            .await?;
+
+        if output.status.success() {
+            info!(path = %host_path, count = env_vars.len(), "Wrote env file to host");
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!(path = %host_path, error = %stderr, "Failed to write env file to host");
+        }
+
+        Ok(())
+    }
 }
 
 /// Background task that syncs configs periodically
@@ -184,11 +241,21 @@ pub async fn config_sync_loop(
 
     info!(interval = sync_interval, "Starting config sync loop");
 
+    // Write initial env file
+    if let Err(e) = client.write_env_file_to_host("/etc/metalhive/.env_vault").await {
+        warn!(error = %e, "Failed to write initial .env_vault");
+    }
+
     loop {
         match client.sync().await {
             Ok(count) => {
                 if count > 0 {
                     info!(count = count, "Synced {} configs from controller", count);
+                    
+                    // Write updated env file to host
+                    if let Err(e) = client.write_env_file_to_host("/etc/metalhive/.env_vault").await {
+                        warn!(error = %e, "Failed to write .env_vault to host");
+                    }
                 } else {
                     debug!("No new configs to sync");
                 }

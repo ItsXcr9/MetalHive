@@ -59,6 +59,9 @@ services:
     command: 
       - "--maxmemory=512mb"
       - "--proactor_threads=2"
+      - "--dir=/data"
+      - "--dbfilename=dump"
+      - "--snapshot_cron=* * * * *"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

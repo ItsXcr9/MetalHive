@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Settings, Key, Eye, EyeOff, Plus, Trash2, History, FolderTree, Loader2, RefreshCw, Check, AlertCircle } from "lucide-react";
-import { setConfig, deleteConfig, getConfigHistory } from "@/lib/api";
+import { listConfigs, setConfig, deleteConfig, getConfigHistory } from "@/lib/api";
 
 interface ConfigEntry {
   path: string;
@@ -23,6 +23,13 @@ export function ConfigPanel() {
   const [storedConfigs, setStoredConfigs] = useState<ConfigEntry[]>([]);
 
   const queryClient = useQueryClient();
+
+  // Fetch existing configs on mount
+  useEffect(() => {
+    listConfigs()
+      .then((data) => setStoredConfigs(data.configs || []))
+      .catch((err) => console.error("Failed to fetch configs:", err));
+  }, []);
 
   // Fetch config history
   const { data: historyData, isLoading: historyLoading } = useQuery({

@@ -150,6 +150,43 @@ func (c *ClickHouseClient) InsertCommandResult(ctx context.Context, executionID,
 	return c.conn.Exec(ctx, query, executionID, hostname, exitCode, stdout, stderr, startedAt, completedAt, durationMs)
 }
 
+// GetCommandResultsByExecutionID retrieves command results for a specific execution
+func (c *ClickHouseClient) GetCommandResultsByExecutionID(ctx context.Context, executionID string) ([]map[string]interface{}, error) {
+	query := `
+		SELECT execution_id, node_hostname, exit_code, stdout, stderr, duration_ms
+		FROM command_results
+		WHERE execution_id = ?
+	`
+
+	rows, err := c.conn.Query(ctx, query, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var execID, hostname, stdout, stderr string
+		var exitCode int32
+		var durationMs uint32
+
+		if err := rows.Scan(&execID, &hostname, &exitCode, &stdout, &stderr, &durationMs); err != nil {
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"execution_id": execID,
+			"hostname":     hostname,
+			"exit_code":    exitCode,
+			"stdout":       stdout,
+			"stderr":       stderr,
+			"duration_ms":  durationMs,
+		})
+	}
+
+	return results, nil
+}
+
 // InsertConfigHistory records a config change
 func (c *ClickHouseClient) InsertConfigHistory(ctx context.Context, namespace, key, value, user, action string, isSecret bool) error {
 	query := `

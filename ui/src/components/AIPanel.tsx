@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { askAI } from "@/lib/api";
-import { Brain, Send, Sparkles, AlertTriangle, Lightbulb, Loader2 } from "lucide-react";
+import { Brain, Send, Sparkles, AlertTriangle, Lightbulb, Loader2, Bot, User, ShieldCheck } from "lucide-react";
 
 interface AIPanelProps {
   compact?: boolean;
@@ -23,6 +23,12 @@ export function AIPanel({ compact = false }: AIPanelProps) {
       content: "👋 Hi! I'm MetalMind, your AI assistant for fleet management. Ask me anything about your infrastructure, containers, or how to optimize your deployments.",
     },
   ]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const mutation = useMutation({
     mutationFn: askAI,
@@ -61,32 +67,34 @@ export function AIPanel({ compact = false }: AIPanelProps) {
   if (compact) {
     return (
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 max-h-48 overflow-y-auto">
+        <div className="flex flex-col gap-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
           {messages.slice(-3).map((msg, i) => (
             <div
               key={i}
-              className={`text-sm ${
-                msg.role === "user" ? "text-blue-400" : "text-secondary"
+              className={`text-sm p-3 rounded-lg border ${
+                msg.role === "user" 
+                  ? "bg-blue-500/10 border-blue-500/20 text-blue-100 ml-4" 
+                  : "bg-surface border-border text-secondary mr-4"
               }`}
             >
               {msg.content}
             </div>
           ))}
         </div>
-        <form onSubmit={handleSubmit} className="flex gap-2">
+        <form onSubmit={handleSubmit} className="flex gap-2 relative">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Ask MetalMind..."
-            className="input text-sm flex-1"
+            className="input text-sm flex-1 pr-10"
           />
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="btn btn-primary p-2"
+            className="absolute right-1 top-1 p-1.5 rounded-md hover:bg-white/10 text-cyan-400 disabled:opacity-50 transition-colors"
           >
-            {mutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {mutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
           </button>
         </form>
       </div>
@@ -94,77 +102,95 @@ export function AIPanel({ compact = false }: AIPanelProps) {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-12rem)]">
-      <div className="flex items-center gap-4 mb-6">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center">
-          <Brain size={24} className="text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold">MetalMind AI</h1>
-          <p className="text-sm text-muted">Powered by Gemini 2.0</p>
+    <div className="flex flex-col h-[calc(100vh-12rem)] glass-card overflow-hidden relative">
+      {/* Header */}
+      <div className="p-6 border-b border-white/5 bg-white/5 backdrop-blur-md">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-glow-purple relative overflow-hidden group">
+            <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Brain size={24} className="text-white relative z-10" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70">
+              MetalMind AI
+            </h1>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <p className="text-sm text-indigo-200/70">Powered by Gemini 2.0</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        {[
-          "Analyze fleet health",
-          "Why is memory high?",
-          "Optimize my containers",
-          "Security recommendations",
-        ].map((suggestion) => (
-          <button
-            key={suggestion}
-            onClick={() => setQuery(suggestion)}
-            className="btn btn-secondary text-xs py-1.5"
-          >
-            <Sparkles size={12} />
-            {suggestion}
-          </button>
-        ))}
-      </div>
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 scroll-optimized custom-scrollbar">
+        {/* Quick Actions */}
+        {messages.length === 1 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-8 animate-float">
+            {[
+              { icon: Sparkles, text: "Analyze fleet health", color: "text-amber-400" },
+              { icon: AlertTriangle, text: "Why is memory high?", color: "text-red-400" },
+              { icon: Brain, text: "Optimize my containers", color: "text-purple-400" },
+              { icon: ShieldCheck, text: "Security recommendations", color: "text-emerald-400" },
+            ].map((item) => (
+              <button
+                key={item.text}
+                onClick={() => setQuery(item.text)}
+                className="flex items-center gap-3 p-4 rounded-xl bg-surface border border-white/5 hover:border-white/10 hover:bg-white/5 transition-all hover:scale-[1.02] group text-left"
+              >
+                <div className={`p-2 rounded-lg bg-white/5 ${item.color}`}>
+                  <item.icon size={18} />
+                </div>
+                <span className="text-sm font-medium text-secondary group-hover:text-primary transition-colors">
+                  {item.text}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4">
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}
+            className={`flex gap-4 ${msg.role === "user" ? "flex-row-reverse" : ""} fade-in`}
+            style={{ animationDelay: `${i * 100}ms` }}
           >
             <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg mt-1 ${
                 msg.role === "user"
-                  ? "bg-blue-500"
-                  : "bg-gradient-to-br from-purple-500 to-blue-600"
+                  ? "bg-gradient-to-br from-cyan-500 to-blue-600"
+                  : "bg-gradient-to-br from-violet-600 to-indigo-600"
               }`}
             >
-              {msg.role === "user" ? "Y" : <Brain size={16} />}
+              {msg.role === "user" ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
             </div>
+            
             <div
-              className={`flex-1 max-w-[80%] ${
+              className={`flex-1 max-w-[80%] space-y-2 ${
                 msg.role === "user" ? "text-right" : ""
               }`}
             >
               <div
-                className={`inline-block p-4 rounded-xl ${
+                className={`inline-block p-4 rounded-2xl shadow-md backdrop-blur-md ${
                   msg.role === "user"
-                    ? "bg-blue-500 text-white"
-                    : "bg-surface border border-border"
+                    ? "bg-blue-600/20 border border-blue-500/30 text-white rounded-tr-sm"
+                    : "bg-surface border border-white/10 text-secondary rounded-tl-sm"
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
               </div>
 
               {msg.recommendations && msg.recommendations.length > 0 && (
-                <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                  <p className="text-xs font-medium text-yellow-400 mb-2 flex items-center gap-1">
-                    <Lightbulb size={12} />
-                    Recommendations
+                <div className="glass-panel p-4 rounded-xl border-l-4 border-l-amber-500/50 mt-2 text-left animate-slide-in">
+                  <p className="text-xs font-bold text-amber-400 mb-3 flex items-center gap-2 uppercase tracking-wider">
+                    <Lightbulb size={14} />
+                    Strategic Recommendations
                   </p>
-                  <ul className="space-y-1">
+                  <ul className="space-y-2">
                     {msg.recommendations.map((rec, j) => (
-                      <li key={j} className="text-xs text-secondary">
-                        • {rec}
+                      <li key={j} className="text-sm text-secondary/90 flex items-start gap-2">
+                        <span className="text-amber-500/70 mt-1.5 text-[10px]">●</span>
+                        {rec}
                       </li>
                     ))}
                   </ul>
@@ -175,42 +201,48 @@ export function AIPanel({ compact = false }: AIPanelProps) {
         ))}
 
         {mutation.isPending && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center">
-              <Brain size={16} className="animate-pulse" />
+          <div className="flex gap-4 fade-in">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg">
+              <Bot size={14} className="text-white animate-pulse" />
             </div>
-            <div className="p-4 rounded-xl bg-surface border border-border">
-              <div className="flex gap-1">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-100" />
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-200" />
+            <div className="p-4 rounded-2xl rounded-tl-sm bg-surface border border-white/10 w-24 flex items-center justify-center">
+              <div className="flex gap-1.5">
+                <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
               </div>
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <form onSubmit={handleSubmit} className="flex gap-3">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Ask MetalMind anything about your fleet..."
-          className="input flex-1"
-        />
-        <button
-          type="submit"
-          disabled={mutation.isPending || !query.trim()}
-          className="btn btn-primary"
-        >
-          {mutation.isPending ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : (
-            <Send size={18} />
-          )}
-        </button>
-      </form>
+      {/* Input Area */}
+      <div className="p-4 bg-white/5 border-t border-white/5 backdrop-blur-md">
+        <form onSubmit={handleSubmit} className="relative group">
+          <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/20 to-purple-500/20 rounded-xl blur opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+          <div className="relative flex gap-2 p-1.5 bg-black/40 border border-white/10 rounded-xl focus-within:border-white/20 transition-colors">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Ask MetalMind anything about your fleet..."
+              className="flex-1 bg-transparent border-none text-sm px-4 py-2.5 outline-none placeholder:text-muted/60"
+            />
+            <button
+              type="submit"
+              disabled={mutation.isPending || !query.trim()}
+              className="px-4 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg hover:shadow-indigo-500/25 disabled:opacity-50 disabled:shadow-none transition-all hover:scale-105 active:scale-95 flex items-center justify-center"
+            >
+              {mutation.isPending ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <Send size={18} />
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

@@ -779,87 +779,81 @@ func (h *Handler) RunCommand(c *fiber.Ctx) error {
 		Str("command", payload.Command).
 		Strs("nodes", payload.Nodes).
 		Int("target_count", targetNodeCount).
-		Msg("Node command dispatched for streaming")
+		Msg("Node command dispatched, waiting for results")
 
-	// Start background goroutine to collect results and log to ClickHouse
-	go func() {
-		// Subscribe to results for this execution
-		resultSubject := "metalhive.results." + executionID
-		sub, err := h.nats.SubscribeSync(resultSubject)
+	// Subscribe to results for this execution and wait synchronously (like containers)
+	resultSubject := "metalhive.results." + executionID
+	sub, err := h.nats.SubscribeSync(resultSubject)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to subscribe for results")
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to subscribe for results"})
+	}
+	defer sub.Unsubscribe()
+
+	// Collect results with timeout
+	timeout := time.Duration(payload.TimeoutSecs) * time.Second
+	deadline := time.Now().Add(timeout)
+	results := make([]map[string]interface{}, 0)
+
+	for len(results) < targetNodeCount && time.Now().Before(deadline) {
+		msg, err := sub.NextMsg(time.Until(deadline))
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to subscribe for background results")
-			return
+			break // Timeout or error
 		}
-		defer sub.Unsubscribe()
 
-		// Collect results with timeout
-		timeout := time.Duration(payload.TimeoutSecs+10) * time.Second
-		deadline := time.Now().Add(timeout)
-		resultsCount := 0
-
-		for resultsCount < targetNodeCount && time.Now().Before(deadline) {
-			msg, err := sub.NextMsg(time.Until(deadline))
-			if err != nil {
-				break // Timeout or error
+		var result map[string]interface{}
+		if err := json.Unmarshal(msg.Data, &result); err == nil {
+			results = append(results, result)
+			
+			// Store result in ClickHouse
+			hostname := ""
+			if h, ok := result["hostname"].(string); ok {
+				hostname = h
 			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(msg.Data, &result); err == nil {
-				resultsCount++
-				
-				// Extract fields for ClickHouse
-				hostname := ""
-				if h, ok := result["hostname"].(string); ok {
-					hostname = h
-				}
-				exitCode := 0
-				if ec, ok := result["exit_code"].(float64); ok {
-					exitCode = int(ec)
-				}
-				stdout := ""
-				if out, ok := result["stdout"].(string); ok {
-					stdout = out
-				}
-				stderr := ""
-				if errStr, ok := result["stderr"].(string); ok {
-					stderr = errStr
-				}
-				durationMs := uint32(0)
-				if d, ok := result["duration_ms"].(float64); ok {
-					durationMs = uint32(d)
-				}
-				
-				bgCtx := context.Background()
-				h.clickhouse.InsertCommandResult(bgCtx, executionID, hostname, exitCode, stdout, stderr, time.Now(), time.Now(), durationMs)
+			exitCode := 0
+			if ec, ok := result["exit_code"].(float64); ok {
+				exitCode = int(ec)
 			}
+			stdout := ""
+			if out, ok := result["stdout"].(string); ok {
+				stdout = out
+			}
+			stderr := ""
+			if errStr, ok := result["stderr"].(string); ok {
+				stderr = errStr
+			}
+			durationMs := uint32(0)
+			if d, ok := result["duration_ms"].(float64); ok {
+				durationMs = uint32(d)
+			}
+			
+			h.clickhouse.InsertCommandResult(ctx, executionID, hostname, exitCode, stdout, stderr, time.Now(), time.Now(), durationMs)
 		}
+	}
 
-		// Update execution status to completed
-		status := "completed"
-		if resultsCount == 0 {
-			status = "no_responses"
-		} else if resultsCount < targetNodeCount {
-			status = "partial"
-		}
-		bgCtx := context.Background()
-		h.clickhouse.UpdateCommandExecutionStatus(bgCtx, executionID, status, time.Now())
+	// Update execution status
+	status := "completed"
+	if len(results) == 0 {
+		status = "no_responses"
+	} else if len(results) < targetNodeCount {
+		status = "partial"
+	}
+	h.clickhouse.UpdateCommandExecutionStatus(ctx, executionID, status, time.Now())
 
-		log.Info().
-			Str("execution_id", executionID).
-			Int("results_collected", resultsCount).
-			Int("target_count", targetNodeCount).
-			Str("status", status).
-			Msg("Background result collection completed")
-	}()
+	log.Info().
+		Str("execution_id", executionID).
+		Int("results_collected", len(results)).
+		Int("target_count", targetNodeCount).
+		Str("status", status).
+		Msg("Node command completed")
 
-	// Return immediately with execution_id - client should connect WebSocket for streaming
+	// Return results directly (same format as containers)
 	return c.JSON(fiber.Map{
 		"execution_id": executionID,
-		"status":       "streaming",
+		"status":       status,
 		"command":      payload.Command,
 		"target_type":  "nodes",
-		"target_count": targetNodeCount,
-		"message":      "Connect to WebSocket /api/v1/exec/" + executionID + "/stream for output",
+		"results":      results,
 	})
 }
 
@@ -1036,7 +1030,37 @@ func (h *Handler) CancelExecution(c *fiber.Ctx) error {
 func (h *Handler) GetConfig(c *fiber.Ctx) error {
 	path := c.Params("*")
 	ctx := c.Context()
+	namespace := c.Query("namespace")
 
+	// If path is empty or just "/", list all configs
+	if path == "" || path == "/" {
+		entries, err := h.vault.List(ctx, namespace)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		
+		// Convert to response format (optionally hide secret values)
+		configs := make([]map[string]interface{}, 0, len(entries))
+		for _, e := range entries {
+			value := e.Value
+			if e.IsSecret {
+				value = "********" // Mask secret values
+			}
+			configs = append(configs, map[string]interface{}{
+				"path":       e.Path,
+				"value":      value,
+				"is_secret":  e.IsSecret,
+				"updated_at": e.UpdatedAt,
+			})
+		}
+		
+		return c.JSON(fiber.Map{
+			"configs": configs,
+			"total":   len(configs),
+		})
+	}
+
+	// Get single config by path
 	value, err := h.vault.Get(ctx, path)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Key not found"})
@@ -1723,6 +1747,7 @@ func (h *Handler) ListStacks(c *fiber.Ctx) error {
 }
 
 // StreamExecOutput handles WebSocket streaming of command execution output
+// StreamExecOutput handles WebSocket streaming of command execution output
 func (h *Handler) StreamExecOutput(c *websocket.Conn) {
 	executionID := c.Params("id")
 	if executionID == "" {
@@ -1733,16 +1758,15 @@ func (h *Handler) StreamExecOutput(c *websocket.Conn) {
 
 	log.Info().Str("execution_id", executionID).Msg("WebSocket connected for streaming output")
 
+	// Channels for NATS messages
+	outputChan := make(chan *nats.Msg, 1000)
+	resultChan := make(chan *nats.Msg, 1)
+
 	// Subscribe to NATS output stream for this execution
 	outputSubject := fmt.Sprintf("metalhive.output.%s", executionID)
 	resultSubject := fmt.Sprintf("metalhive.results.%s", executionID)
 	
-	outputSub, err := h.nats.Subscribe(outputSubject, func(msg *nats.Msg) {
-		// Forward output line to WebSocket
-		if err := c.WriteMessage(websocket.TextMessage, msg.Data); err != nil {
-			log.Error().Err(err).Msg("Failed to write to WebSocket")
-		}
-	})
+	outputSub, err := h.nats.ChanSubscribe(outputSubject, outputChan)
 	if err != nil {
 		c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to subscribe: %v"}`, err)))
 		c.Close()
@@ -1750,11 +1774,8 @@ func (h *Handler) StreamExecOutput(c *websocket.Conn) {
 	}
 	defer outputSub.Unsubscribe()
 
-	// Also subscribe to final result
-	resultChan := make(chan *nats.Msg, 1)
-	resultSub, err := h.nats.Subscribe(resultSubject, func(msg *nats.Msg) {
-		resultChan <- msg
-	})
+	// Subscribe to final result
+	resultSub, err := h.nats.ChanSubscribe(resultSubject, resultChan)
 	if err != nil {
 		c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to subscribe results: %v"}`, err)))
 		c.Close()
@@ -1762,34 +1783,101 @@ func (h *Handler) StreamExecOutput(c *websocket.Conn) {
 	}
 	defer resultSub.Unsubscribe()
 
+	// Handle client disconnects via a separate goroutine
+	disconnectChan := make(chan struct{})
+	go func() {
+		for {
+			if _, _, err := c.ReadMessage(); err != nil {
+				close(disconnectChan)
+				return
+			}
+		}
+	}()
+
+	// Give a short window for late subscription to catch results
+	// If no result arrives quickly, check ClickHouse for existing results
+	initialTimeout := time.After(2 * time.Second)
+	
+	select {
+	case result := <-resultChan:
+		// Got result from NATS - forward and close
+		finalMsg := fmt.Sprintf(`{"type":"complete","data":%s}`, string(result.Data))
+		c.WriteMessage(websocket.TextMessage, []byte(finalMsg))
+		time.Sleep(100 * time.Millisecond)
+		c.Close()
+		return
+	case <-initialTimeout:
+		// Check ClickHouse for existing results
+		log.Debug().Str("execution_id", executionID).Msg("NATS timeout, checking ClickHouse for results")
+		ctx := context.Background()
+		results, err := h.clickhouse.GetCommandResultsByExecutionID(ctx, executionID)
+		if err != nil {
+			log.Error().Err(err).Str("execution_id", executionID).Msg("Failed to query ClickHouse for results")
+		}
+		log.Debug().Str("execution_id", executionID).Int("results_count", len(results)).Msg("ClickHouse query result")
+		if err == nil && len(results) > 0 {
+			// Results already exist in ClickHouse - send them
+			for i, result := range results {
+				resultJSON, _ := json.Marshal(result)
+				finalMsg := fmt.Sprintf(`{"type":"complete","data":%s}`, string(resultJSON))
+				log.Debug().Str("execution_id", executionID).Int("result_index", i).Msg("Sending complete message to WebSocket")
+				if err := c.WriteMessage(websocket.TextMessage, []byte(finalMsg)); err != nil {
+					log.Error().Err(err).Str("execution_id", executionID).Msg("Failed to write to WebSocket")
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+			c.Close()
+			return
+		}
+		// No results yet - continue waiting on NATS
+		log.Debug().Str("execution_id", executionID).Msg("No ClickHouse results, continuing to wait on NATS")
+	case <-disconnectChan:
+		return
+	}
+
 	// Keep connection open until command completes or client disconnects
-	// Set a max timeout of 10 minutes for long-running commands
 	timeout := time.After(10 * time.Minute)
 	
 	for {
 		select {
+		case msg := <-outputChan:
+			// Forward output line
+			if err := c.WriteMessage(websocket.TextMessage, msg.Data); err != nil {
+				return
+			}
+
 		case result := <-resultChan:
+			// Drain any remaining output messages first to ensure lines appear before complete
+			// We loop until channel is empty or we hit limit to prevent tight loop
+			for i := 0; i < len(outputChan)+10; i++ {
+				select {
+				case msg := <-outputChan:
+					if err := c.WriteMessage(websocket.TextMessage, msg.Data); err != nil {
+						return
+					}
+				default:
+					goto Drained
+				}
+			}
+		Drained:
+			
 			// Send final result and close
 			finalMsg := fmt.Sprintf(`{"type":"complete","data":%s}`, string(result.Data))
 			c.WriteMessage(websocket.TextMessage, []byte(finalMsg))
+			
+			// Give a tiny moment for the message to flush?
+			time.Sleep(100 * time.Millisecond)
 			c.Close()
 			return
+
+		case <-disconnectChan:
+			log.Info().Str("execution_id", executionID).Msg("WebSocket client disconnected")
+			return
+
 		case <-timeout:
 			c.WriteMessage(websocket.TextMessage, []byte(`{"type":"timeout","error":"execution timeout"}`))
 			c.Close()
 			return
-		default:
-			// Check if client disconnected
-			c.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-			_, _, err := c.ReadMessage()
-			if err != nil {
-				if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-					log.Info().Str("execution_id", executionID).Msg("WebSocket client disconnected")
-					return
-				}
-				// Timeout on read is expected, continue loop
-			}
-			time.Sleep(50 * time.Millisecond)
 		}
 	}
 }
