@@ -146,8 +146,8 @@ services:
     ports:
       - "3002:3000"   # Changed to 3002 to avoid conflict
     environment:
-      - UI_USERNAME=admin
-      - UI_PASSWORD=metalhive-secure
+      - UI_USERNAME=saeed
+      - UI_PASSWORD=saeed
       - NEXT_PUBLIC_API_URL=http://65.109.200.75:8080
       - NEXT_PUBLIC_WS_URL=ws://65.109.200.75:8080
       - NEXT_PUBLIC_ANCIENTREPORT_API=http://65.109.200.75:6080

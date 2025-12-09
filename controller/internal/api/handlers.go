@@ -1039,12 +1039,15 @@ func (h *Handler) GetConfig(c *fiber.Ctx) error {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 		
+		// Check if client requests unmasked secrets (for agents)
+		includeSecrets := c.Query("include_secrets") == "true"
+		
 		// Convert to response format (optionally hide secret values)
 		configs := make([]map[string]interface{}, 0, len(entries))
 		for _, e := range entries {
 			value := e.Value
-			if e.IsSecret {
-				value = "********" // Mask secret values
+			if e.IsSecret && !includeSecrets {
+				value = "********" // Mask secret values for UI
 			}
 			configs = append(configs, map[string]interface{}{
 				"path":       e.Path,
@@ -1059,6 +1062,7 @@ func (h *Handler) GetConfig(c *fiber.Ctx) error {
 			"total":   len(configs),
 		})
 	}
+
 
 	// Get single config by path
 	value, err := h.vault.Get(ctx, path)

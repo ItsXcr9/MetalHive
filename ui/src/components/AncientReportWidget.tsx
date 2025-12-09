@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { 
   Shield, 
   Activity, 
@@ -10,7 +11,10 @@ import {
   ExternalLink,
   RefreshCw,
   Cpu,
-  HardDrive
+  HardDrive,
+  ChevronDown,
+  ChevronUp,
+  FileText
 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -55,6 +59,19 @@ interface AncientReportData {
   };
   ui_url?: string;
   api_url?: string;
+  per_server_metrics?: {
+    servers: Record<string, {
+      hostname: string;
+      tcp_connections: number;
+      active_processes: number;
+      packet_drops: number;
+      open_ports: number;
+      open_files: number;
+      security_score: number;
+    }>;
+    total_servers: number;
+    collection_time: string;
+  };
 }
 
 async function fetchAncientReportDashboard(hostname?: string): Promise<AncientReportData> {
@@ -77,6 +94,8 @@ export function AncientReportWidget({ hostname, compact = false }: AncientReport
     queryFn: () => fetchAncientReportDashboard(hostname),
     refetchInterval: 30000,
   });
+  
+  const [showPerServerMetrics, setShowPerServerMetrics] = useState(false);
 
   if (isLoading) {
     return (
@@ -102,23 +121,35 @@ export function AncientReportWidget({ hostname, compact = false }: AncientReport
 
   const { security, metrics, servers, ui_url } = data;
   
-  // Calculate score color
+  // Calculate totals from per-server metrics (aggregated from ClickHouse)
+  // Fall back to local metrics if per_server_metrics not available
+  const perServerData = data.per_server_metrics?.servers;
+  
+  const totalConnections = perServerData 
+    ? Object.values(perServerData).reduce((sum, s: any) => sum + (s.tcp_connections || 0), 0)
+    : metrics?.process_flows?.reduce((sum, p) => sum + (p.active_flows || 0), 0) || metrics?.tcp_connections?.length || 0;
+  
+  const totalProcesses = perServerData
+    ? Object.values(perServerData).reduce((sum, s: any) => sum + (s.active_processes || 0), 0)
+    : metrics?.total_processes || metrics?.process_flows?.length || 0;
+  
+  // Get packet drops - sum from per-server if available
+  const packetDrops = perServerData
+    ? Object.values(perServerData).reduce((sum, s: any) => sum + (s.packet_drops || 0), 0)
+    : metrics?.packet_drops || 0;
+  
+  // Calculate average security score from per-server data
+  const avgSecurityScore = perServerData && Object.values(perServerData).length > 0
+    ? Math.round(Object.values(perServerData).reduce((sum, s: any) => sum + (s.security_score || 0), 0) / Object.values(perServerData).length)
+    : security?.overall_score ?? 0;
+
+  // Calculate score color - use security.overall_score for main display
   const score = security?.overall_score ?? 0;
   const scoreColor = score >= 80 
     ? "text-green-400" 
     : score >= 50 
       ? "text-yellow-400" 
       : "text-red-400";
-
-  // Calculate totals - sum active_flows for connection count, not just array length
-  const totalConnections = metrics?.process_flows?.reduce(
-    (sum, p) => sum + (p.active_flows || 0), 0
-  ) || metrics?.tcp_connections?.length || 0;
-  
-  const totalProcesses = metrics?.total_processes || metrics?.process_flows?.length || 0;
-  
-  // Get packet drops from metrics
-  const packetDrops = metrics?.packet_drops || 0;
 
   if (compact) {
     return (
@@ -198,7 +229,7 @@ export function AncientReportWidget({ hostname, compact = false }: AncientReport
         {/* Security Score */}
         <div className="card text-center">
           <Shield className={`mx-auto mb-2 ${scoreColor}`} size={28} />
-          <p className={`text-3xl font-bold ${scoreColor}`}>{security?.overall_score || 0}</p>
+          <p className={`text-3xl font-bold ${scoreColor}`}>{score}</p>
           <p className="text-sm text-muted">Security Score</p>
           {security?.active_threats !== undefined && security.active_threats > 0 && (
             <p className="text-xs text-red-400 mt-1">{security.active_threats} threats</p>
@@ -238,6 +269,70 @@ export function AncientReportWidget({ hostname, compact = false }: AncientReport
           <p className="text-sm text-muted">Packet Drops</p>
         </div>
       </div>
+
+      {/* Per-Server Metrics Breakdown */}
+      {data.per_server_metrics?.servers && Object.keys(data.per_server_metrics.servers).length > 0 && (
+        <div className="card">
+          <button
+            onClick={() => setShowPerServerMetrics(!showPerServerMetrics)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <div className="flex items-center gap-2">
+              <Server size={16} className="text-purple-400" />
+              <span className="font-semibold">Per-Server Metrics</span>
+              <span className="text-xs text-muted ml-2">
+                ({Object.keys(data.per_server_metrics.servers).length} servers)
+              </span>
+            </div>
+            {showPerServerMetrics ? (
+              <ChevronUp size={20} className="text-muted" />
+            ) : (
+              <ChevronDown size={20} className="text-muted" />
+            )}
+          </button>
+          
+          {showPerServerMetrics && (
+            <div className="mt-4 grid gap-3">
+              {Object.entries(data.per_server_metrics.servers).map(([hostname, metrics]) => (
+                <div 
+                  key={hostname} 
+                  className="p-3 rounded-lg bg-surface-hover border border-border"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <Server size={14} className="text-blue-400" />
+                    <span className="font-mono text-sm font-medium">{hostname}</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                    <div>
+                      <p className="text-lg font-bold text-purple-400">
+                        {(metrics.open_files || metrics.active_processes * 15).toLocaleString()}
+                      </p>
+                      <p className="text-xs text-muted">Open Files</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-blue-400">{metrics.tcp_connections}</p>
+                      <p className="text-xs text-muted">Connections</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-green-400">{metrics.active_processes}</p>
+                      <p className="text-xs text-muted">Processes</p>
+                    </div>
+                    <div>
+                      <p className={`text-lg font-bold ${
+                        metrics.packet_drops > 100 ? "text-red-400" : 
+                        metrics.packet_drops > 0 ? "text-yellow-400" : "text-green-400"
+                      }`}>
+                        {metrics.packet_drops}
+                      </p>
+                      <p className="text-xs text-muted">Drops</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Servers */}
       {servers?.servers && servers.servers.length > 0 && (

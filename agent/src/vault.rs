@@ -121,7 +121,7 @@ impl VaultClient {
     /// Sync a specific namespace
     async fn sync_namespace(&self, namespace: &str) -> Result<usize> {
         let url = format!(
-            "{}/api/v1/config?namespace={}",
+            "{}/api/v1/config?namespace={}&include_secrets=true",
             self.controller_url,
             urlencoding::encode(namespace)
         );

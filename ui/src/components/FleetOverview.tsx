@@ -180,46 +180,7 @@ export function FleetOverview({ selectedNode, onSelectNode }: FleetOverviewProps
         </div>
       </div>
 
-      {/* Server Grid */}
-      {!selectedNode && (
-        <div>
-          <h3 className="text-lg font-semibold mb-4">Server Grid</h3>
-          {isLoading ? (
-            <div className="text-center py-8 text-muted">Loading servers...</div>
-          ) : serverList.length === 0 ? (
-            <div className="text-center py-8 text-muted">No servers registered yet.</div>
-          ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {serverList.map((server) => (
-                <div
-                  key={server.hostname}
-                  onClick={() => onSelectNode(server.hostname)}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all hover:scale-105 ${
-                    selectedNode === server.hostname 
-                      ? "ring-2 ring-primary border-primary" 
-                      : "border-green-500/50 bg-green-500/5"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Server size={16} className="text-muted" />
-                      <span className="font-medium text-sm truncate max-w-[100px]" title={server.hostname}>
-                        {server.hostname}
-                      </span>
-                    </div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
-                  </div>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between"><span className="text-muted">CPU</span><span>{server.cpu_cores || "?"} cores</span></div>
-                    <div className="flex justify-between"><span className="text-muted">RAM</span><span>{server.memory_total_gb?.toFixed(1) || "?"} GB</span></div>
-                    <div className="flex justify-between"><span className="text-muted">Disk</span><span>{server.disk_free_gb?.toFixed(0) || "?"} GB free</span></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+
     </div>
   );
 }

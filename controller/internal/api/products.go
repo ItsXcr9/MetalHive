@@ -615,15 +615,25 @@ func (h *Handler) GetAncientReportDashboard(c *fiber.Ctx) error {
 		json.NewDecoder(securityResp.Body).Decode(&security)
 	}
 
+	// Get per-server metrics breakdown
+	perServerURL := arProduct.APIURL + "/api/v3/ebpf/metrics/by-server"
+	perServerResp, _ := client.Get(perServerURL)
+	var perServerMetrics interface{}
+	if perServerResp != nil {
+		defer perServerResp.Body.Close()
+		json.NewDecoder(perServerResp.Body).Decode(&perServerMetrics)
+	}
+
 	return c.JSON(fiber.Map{
-		"available":   true,
-		"api_healthy": true,
-		"status":      status,
-		"servers":     servers,
-		"metrics":     metrics,
-		"security":    security,
-		"ui_url":      arProduct.UIURL,
-		"api_url":     arProduct.APIURL,
+		"available":          true,
+		"api_healthy":        true,
+		"status":             status,
+		"servers":            servers,
+		"metrics":            metrics,
+		"security":           security,
+		"per_server_metrics": perServerMetrics,
+		"ui_url":             arProduct.UIURL,
+		"api_url":            arProduct.APIURL,
 	})
 }
 

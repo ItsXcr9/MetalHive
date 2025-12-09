@@ -78,7 +78,7 @@ export default function Home() {
   }, [queryClient]);
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen">
       {/* Sidebar */}
       <Sidebar activePanel={activePanel} onNavigate={setActivePanel} />
 

@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchNodes, registerNode, renameNode } from "@/lib/api";
-import { Server, Cpu, HardDrive, MemoryStick, Plus, X, Copy, Check, Terminal, Edit2 } from "lucide-react";
+import { Server, Cpu, HardDrive, MemoryStick, Plus, X, Copy, Check, Terminal, Edit2, ArrowLeft } from "lucide-react";
 import { AddNodeModal } from "./AddNodeModal";
+import { MetricsPanel } from "./MetricsPanel";
 
 const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
 
@@ -79,6 +80,27 @@ export function NodesPanel({ selectedNode, onSelectNode }: NodesPanelProps) {
   }
 
   const nodes = data?.nodes || [];
+
+  if (selectedNode) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => onSelectNode(null)}
+            className="btn btn-ghost p-2 hover:bg-surface rounded-full transition-colors"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Server className="text-primary" size={24} />
+            {selectedNode}
+          </h1>
+        </div>
+        
+        <MetricsPanel selectedNode={selectedNode} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
