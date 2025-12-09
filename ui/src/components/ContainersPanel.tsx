@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchContainers, startContainer, stopContainer, restartContainer, removeContainer, getContainerLogs, deployStack } from "@/lib/api";
 import { Box, Play, Square, RefreshCw, Trash2, Terminal, X, Loader2, MonitorUp, Rocket } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ContainerTerminal } from "./ContainerTerminal";
 import { DraggableWindow } from "@/components/ui/DraggableWindow";
 
@@ -128,9 +128,7 @@ services:
           initialHeight={600}
           onClose={() => setLogsModal(null)}
         >
-          <div className="p-4 overflow-auto h-full text-xs font-mono text-secondary whitespace-pre-wrap">
-            {logsModal.logs || "No logs available"}
-          </div>
+          <LogViewer logs={logsModal.logs} />
         </DraggableWindow>
       )}
 
@@ -378,6 +376,23 @@ function ContainerCard({
           {container.ports.join(", ")}
         </div>
       )}
+    </div>
+  );
+}
+
+function LogViewer({ logs }: { logs: string }) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom on mount
+  useEffect(() => {
+    if (viewportRef.current) {
+      viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  return (
+    <div ref={viewportRef} className="p-4 h-full overflow-auto text-xs font-mono text-secondary whitespace-pre-wrap">
+      {logs || "No logs available"}
     </div>
   );
 }

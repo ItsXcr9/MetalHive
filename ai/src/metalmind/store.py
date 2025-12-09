@@ -190,3 +190,247 @@ class ClickHouseStore:
             logger.error("Failed to get reports", error=str(e))
             return []
 
+    async def get_unhealthy_containers(self) -> list[dict[str, Any]]:
+        """Get containers with health issues"""
+        # This queries the controller API for container status
+        import httpx
+        from metalmind.config import settings
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{settings.controller_url}/api/v1/containers")
+                if response.status_code == 200:
+                    data = response.json()
+                    containers = data.get("containers", [])
+                    # Filter unhealthy containers - use lowercase 'state' and check 'status' string
+                    unhealthy = [
+                        {
+                            "name": c.get("name"),
+                            "state": c.get("state"),
+                            "status": c.get("status", "")[:60],
+                            "image": c.get("image", "")[:40],
+                        }
+                        for c in containers 
+                        if c.get("state") not in ("running", "created")
+                        or "unhealthy" in c.get("status", "").lower()
+                    ]
+                    return unhealthy
+        except Exception as e:
+            logger.error("Failed to get unhealthy containers", error=str(e))
+        return []
+
+    async def get_container_logs(self, hostname: str, container_id: str, lines: int = 50) -> str:
+        """Get recent logs from a container via controller API"""
+        import httpx
+        from metalmind.config import settings
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{settings.controller_url}/api/v1/containers/{hostname}/{container_id}/logs",
+                    params={"tail": lines}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("logs", "")
+        except Exception as e:
+            logger.error("Failed to get container logs", error=str(e), container_id=container_id)
+        return ""
+
+    async def get_system_health_summary(self) -> dict[str, Any]:
+        """Get comprehensive system health for AI context"""
+        import httpx
+        from metalmind.config import settings
+        
+        summary = {
+            "nodes": {"total": 0, "online": 0, "offline": 0, "list": []},
+            "containers": {"total": 0, "running": 0, "stopped": 0, "unhealthy": 0},
+            "container_issues": [],
+            "recent_containers": [],
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Get nodes - API returns {"nodes": [{"hostname": "x", "online": true, ...}]}
+                nodes_resp = await client.get(f"{settings.controller_url}/api/v1/nodes")
+                if nodes_resp.status_code == 200:
+                    nodes = nodes_resp.json().get("nodes", [])
+                    summary["nodes"]["total"] = len(nodes)
+                    summary["nodes"]["online"] = len([n for n in nodes if n.get("online") == True])
+                    summary["nodes"]["offline"] = len([n for n in nodes if n.get("online") != True])
+                    summary["nodes"]["list"] = [
+                        {"hostname": n.get("hostname"), "online": n.get("online"), "agent_id": n.get("agent_id")}
+                        for n in nodes[:5]
+                    ]
+                
+                # Get containers - API returns {"containers": [{"name": "x", "state": "running", "status": "Up 5 days (healthy)"}]}
+                containers_resp = await client.get(f"{settings.controller_url}/api/v1/containers")
+                if containers_resp.status_code == 200:
+                    containers = containers_resp.json().get("containers", [])
+                    summary["containers"]["total"] = len(containers)
+                    summary["containers"]["running"] = len([c for c in containers if c.get("state") == "running"])
+                    summary["containers"]["stopped"] = len([c for c in containers if c.get("state") != "running"])
+                    
+                    # Check for unhealthy - look for "unhealthy" in status string
+                    unhealthy = [
+                        c for c in containers 
+                        if "unhealthy" in c.get("status", "").lower() 
+                        or c.get("state") not in ("running", "created")
+                    ]
+                    
+                    # Separate truly problematic containers
+                    stopped = [c for c in containers if c.get("state") not in ("running", "created")]
+                    
+                    summary["containers"]["unhealthy"] = len([c for c in containers if "unhealthy" in c.get("status", "").lower()])
+                    summary["container_issues"] = [
+                        {
+                            "name": c.get("name", c.get("id", "unknown")[:12]),
+                            "state": c.get("state"),
+                            "status": c.get("status", "")[:50],  # Truncate
+                            "image": c.get("image", "")[:40],
+                        }
+                        for c in unhealthy[:10]
+                    ]
+                    
+                    # Add some recent running containers for context
+                    running = [c for c in containers if c.get("state") == "running"][:5]
+                    summary["recent_containers"] = [
+                        {"name": c.get("name"), "status": c.get("status", "")[:40]}
+                        for c in running
+                    ]
+        except Exception as e:
+            logger.error("Failed to get system health summary", error=str(e))
+        
+        return summary
+
+    async def get_ancientreport_summary(self) -> dict[str, Any]:
+        """Get security analysis data from AncientReport V3 API"""
+        import httpx
+        from metalmind.config import settings
+        
+        summary = {
+            "available": False,
+            "security_dashboard": {},
+            "active_threats": [],
+            "recent_alerts": [],
+            "latest_reports": [],
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Get security dashboard
+                try:
+                    dashboard_resp = await client.get(f"{settings.ancientreport_api_url}/api/v3/security/dashboard")
+                    if dashboard_resp.status_code == 200:
+                        data = dashboard_resp.json()
+                        summary["available"] = True
+                        summary["security_dashboard"] = {
+                            "overall_score": data.get("overall_score"),
+                            "hosts_scanned": data.get("hosts_scanned"),
+                            "total_open_ports": data.get("total_open_ports"),
+                            "risky_ports_count": data.get("risky_ports_count"),
+                            "active_threats": data.get("active_threats"),
+                        }
+                except Exception:
+                    pass
+                
+                # Get active threats
+                try:
+                    threats_resp = await client.get(f"{settings.ancientreport_api_url}/api/v3/security/threats/active")
+                    if threats_resp.status_code == 200:
+                        data = threats_resp.json()
+                        summary["available"] = True
+                        summary["active_threats"] = data[:5] if isinstance(data, list) else []
+                except Exception:
+                    pass
+                
+                # Get recent alerts
+                try:
+                    alerts_resp = await client.get(f"{settings.ancientreport_api_url}/api/v3/alerts/history")
+                    if alerts_resp.status_code == 200:
+                        data = alerts_resp.json()
+                        summary["available"] = True
+                        summary["recent_alerts"] = data[:5] if isinstance(data, list) else data.get("alerts", [])[:5]
+                except Exception:
+                    pass
+                
+                # Get latest analysis reports
+                try:
+                    reports_resp = await client.get(f"{settings.ancientreport_api_url}/api/reports/latest")
+                    if reports_resp.status_code == 200:
+                        data = reports_resp.json()
+                        summary["available"] = True
+                        if isinstance(data, dict):
+                            summary["latest_reports"] = [data]
+                        elif isinstance(data, list):
+                            summary["latest_reports"] = data[:3]
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            logger.debug("AncientReport API not available", error=str(e))
+        
+        return summary
+
+    async def get_mithrillog_summary(self) -> dict[str, Any]:
+        """Get log monitoring data from MithrilLog API"""
+        import httpx
+        from metalmind.config import settings
+        
+        summary = {
+            "available": False,
+            "hourly_summary": {},
+            "error_insights": [],
+            "log_stats": {},
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Get hourly summaries
+                try:
+                    hourly_resp = await client.get(f"{settings.mithrillog_api_url}/summaries/hourly")
+                    if hourly_resp.status_code == 200:
+                        data = hourly_resp.json()
+                        summary["available"] = True
+                        if isinstance(data, list) and len(data) > 0:
+                            latest = data[0]
+                            summary["hourly_summary"] = {
+                                "total_logs": latest.get("stats", {}).get("total_logs", 0),
+                                "severity_counts": latest.get("stats", {}).get("by_severity", {}),
+                                "period": latest.get("period", {}),
+                            }
+                except Exception:
+                    pass
+                
+                # Get error insights
+                try:
+                    errors_resp = await client.get(f"{settings.mithrillog_api_url}/insights/errors")
+                    if errors_resp.status_code == 200:
+                        data = errors_resp.json()
+                        summary["available"] = True
+                        if isinstance(data, list):
+                            summary["error_insights"] = [
+                                {
+                                    "severity": e.get("severity"),
+                                    "message": e.get("message", "")[:100],
+                                    "occurrences": e.get("error_total", e.get("occurrences", 0)),
+                                }
+                                for e in data[:5]
+                            ]
+                except Exception:
+                    pass
+                
+                # Get log stats/counts
+                try:
+                    stats_resp = await client.get(f"{settings.mithrillog_api_url}/api/stats/counts")
+                    if stats_resp.status_code == 200:
+                        data = stats_resp.json()
+                        summary["available"] = True
+                        summary["log_stats"] = data
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            logger.debug("MithrilLog API not available", error=str(e))
+        
+        return summary

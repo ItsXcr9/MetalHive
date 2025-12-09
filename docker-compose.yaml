@@ -53,7 +53,7 @@ services:
     image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
     container_name: metalhive-dragonfly
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379" # Bind to localhost ONLY to prevent external access (Security Fix)
     volumes:
       - dragonfly-data:/data
     command: 
@@ -98,7 +98,7 @@ services:
       dragonfly:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -111,14 +111,23 @@ services:
     container_name: metalhive-ai
     ports:
       - "8082:8081"   # Changed to 8082 to avoid conflict
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - METALMIND_HOST=0.0.0.0
       - METALMIND_PORT=8081
+      - METALMIND_AI_PROVIDER=openai
+      - METALMIND_OPENAI_API_KEY=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
+      - METALMIND_OPENAI_MODEL=gpt-4o-mini
       - METALMIND_GEMINI_API_KEY=AIzaSyAZOhNPlY5N0M-1yetYR0grC_UN7oNx1Es
       - METALMIND_GEMINI_MODEL=gemini-2.5-flash-lite
       - METALMIND_NATS_URL=nats://nats:4222
       - METALMIND_CLICKHOUSE_URL=http://clickhouse:8123
       - METALMIND_REDIS_URL=redis://dragonfly:6379
+      - METALMIND_CONTROLLER_URL=http://controller:8080
+      # External APIs - use server IP for access
+      - METALMIND_ANCIENTREPORT_API_URL=http://65.109.200.75:6080
+      - METALMIND_MITHRILLOG_API_URL=http://65.109.200.75:9900
       - METALMIND_LOG_LEVEL=debug
     depends_on:
       nats:

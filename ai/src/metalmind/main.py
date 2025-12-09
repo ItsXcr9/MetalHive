@@ -20,8 +20,10 @@ from pydantic import BaseModel
 
 from metalmind.config import settings
 from metalmind.gemini import GeminiClient
+from metalmind.openai_client import OpenAIClient, AIResponse
 from metalmind.analyzers import AnomalyDetector, TrendAnalyzer
 from metalmind.store import ClickHouseStore
+from metalmind.history import ChatHistory
 
 # Configure structured logging
 structlog.configure(
@@ -43,8 +45,16 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     logger.info("🤖 MetalMind AI Engine starting...")
     
-    # Initialize Gemini client
-    app.state.gemini = GeminiClient(settings.gemini_api_key, settings.gemini_model)
+    # Initialize AI client based on configuration
+    if settings.ai_provider == "openai" and settings.openai_api_key:
+        app.state.ai_client = OpenAIClient(settings.openai_api_key, settings.openai_model)
+        logger.info("Using OpenAI", model=settings.openai_model)
+    else:
+        app.state.ai_client = GeminiClient(settings.gemini_api_key, settings.gemini_model)
+        logger.info("Using Gemini", model=settings.gemini_model)
+    
+    # Keep gemini reference for backward compatibility
+    app.state.gemini = app.state.ai_client
     
     # Initialize ClickHouse connection
     try:
@@ -57,6 +67,9 @@ async def lifespan(app: FastAPI):
     # Initialize analyzers
     app.state.anomaly_detector = AnomalyDetector()
     app.state.trend_analyzer = TrendAnalyzer()
+    
+    # Initialize chat history
+    app.state.history = ChatHistory(settings.redis_url)
     
     logger.info("MetalMind AI Engine ready", port=settings.port)
     
@@ -88,6 +101,7 @@ app.add_middleware(
 class AskRequest(BaseModel):
     """Natural language query request"""
     query: str
+    session_id: str | None = None  # For chat history
     context: dict[str, Any] | None = None
 
 
@@ -175,40 +189,86 @@ async def ask_ai(request: AskRequest) -> AskResponse:
     - "Why did server-02 crash last night?"
     - "Which containers are using the most CPU?"
     - "How can I optimize my database performance?"
+    - "Analyze fleet health"
+    - "Security recommendations"
     """
-    logger.info("Processing natural language query", query=request.query)
+    logger.info("Processing natural language query", query=request.query, session_id=request.session_id)
     
-    gemini: GeminiClient = app.state.gemini
+    ai_client = app.state.ai_client
     store: ClickHouseStore | None = app.state.store
+    history: ChatHistory = app.state.history
     
-    # Build context from database if available
+    # Generate session ID if not provided
+    session_id = request.session_id or f"session-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    
+    # Build comprehensive context from all sources
     context = request.context or {}
     if store:
         try:
-            # Get recent metrics and events for context
+            # Get system health overview
+            context["system_health"] = await store.get_system_health_summary()
             context["recent_alerts"] = await store.get_recent_alerts(hours=24)
+            context["unhealthy_containers"] = await store.get_unhealthy_containers()
             context["node_health"] = await store.get_node_health_summary()
+            
+            # Get external API data for richer context
+            context["ancientreport"] = await store.get_ancientreport_summary()
+            context["mithrillog"] = await store.get_mithrillog_summary()
         except Exception as e:
             logger.warning("Failed to fetch context data", error=str(e))
     
-    # Build prompt
-    system_prompt = """You are MetalMind, an AI assistant for MetalHive - a bare-metal Docker fleet orchestrator.
-You help DevOps engineers understand their infrastructure, diagnose issues, and optimize performance.
-Be concise but thorough. If you're unsure, say so. Always provide actionable recommendations when possible.
+    # Get chat history for context
+    chat_history = await history.get_history(session_id, limit=10)
+    if chat_history:
+        context["chat_history"] = [
+            {"role": m["role"], "content": m["content"][:200]}  # Truncate for context
+            for m in chat_history[-5:]  # Last 5 messages
+        ]
+    
+    # Enhanced system prompt for better diagnostics
+    system_prompt = """You are MetalMind, an expert AI assistant for MetalHive - a bare-metal Docker fleet orchestrator.
 
-Available context about the fleet:
-- Recent alerts and events
-- Node health status
-- Container metrics
-- Configuration history
+You have deep knowledge of:
+• Docker containers, images, and orchestration
+• Linux system administration and troubleshooting
+• Performance monitoring and optimization
+• Security best practices
+
+Your capabilities:
+• Analyze container health and logs to diagnose issues
+• Identify performance bottlenecks and resource constraints
+• Recommend remediation steps for common problems
+• Explain complex issues in simple terms
+• Provide security recommendations using AncientReport data
+• Analyze log patterns using MithrilLog data
+
+Guidelines:
+• Be concise and actionable. Start with the key finding.
+• If asked about problems, check the context for unhealthy containers and recent alerts.
+• Provide specific commands when recommending actions.
+• If you don't have enough information, say what you need.
+
+You have real-time access to:
+• Node health status (online/offline)
+• Container states and health checks
+• Recent system alerts
+• Metrics and performance data
+• Security scans from AncientReport
+• Log monitoring from MithrilLog
 """
     
     try:
-        response = await gemini.generate(
+        # Save user message to history
+        await history.save_message(session_id, "user", request.query)
+        
+        response = await ai_client.generate(
             prompt=request.query,
             system_prompt=system_prompt,
             context=context,
         )
+        
+        # Save AI response to history
+        await history.save_message(session_id, "assistant", response.text)
         
         return AskResponse(
             query=request.query,
@@ -220,6 +280,30 @@ Available context about the fleet:
     except Exception as e:
         logger.error("Failed to generate AI response", error=str(e))
         raise HTTPException(status_code=500, detail="AI processing failed")
+
+
+@app.get("/history/{session_id}")
+async def get_chat_history(session_id: str, limit: int = 20) -> dict[str, Any]:
+    """Get chat history for a session"""
+    history: ChatHistory = app.state.history
+    messages = await history.get_history(session_id, limit=limit)
+    return {"session_id": session_id, "messages": messages, "count": len(messages)}
+
+
+@app.delete("/history/{session_id}")
+async def clear_chat_history(session_id: str) -> dict[str, Any]:
+    """Clear chat history for a session"""
+    history: ChatHistory = app.state.history
+    success = await history.clear_history(session_id)
+    return {"session_id": session_id, "cleared": success}
+
+
+@app.get("/sessions")
+async def list_sessions(limit: int = 20) -> dict[str, Any]:
+    """List active chat sessions"""
+    history: ChatHistory = app.state.history
+    sessions = await history.get_sessions(limit=limit)
+    return {"sessions": sessions, "count": len(sessions)}
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)

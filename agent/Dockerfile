@@ -51,9 +51,7 @@ RUN chmod +x /usr/local/bin/metalhive-agent
 # Note: Agent needs root for Docker socket access
 USER root
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --spider -q http://localhost:9090/health || exit 1
+
 
 # Default environment variables
 ENV RUST_LOG=info
