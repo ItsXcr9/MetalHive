@@ -184,13 +184,14 @@ function DashboardView({
             </div>
           </div>
 
-          {/* Fleet Metrics Chart */}
+          {/* Fleet Metrics Chart - Disabled for now
           <div className="card">
             <h2 className="text-lg font-semibold mb-4">📈 Fleet Metrics</h2>
             <div className="h-64">
               <MetricsPanel selectedNode={null} compact />
             </div>
           </div>
+          */}
 
           {/* Products Quick View */}
           <div className="card">

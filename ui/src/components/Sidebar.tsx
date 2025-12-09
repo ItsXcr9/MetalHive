@@ -43,8 +43,8 @@ export function Sidebar({ activePanel, onNavigate }: SidebarProps) {
     >
       {/* Logo */}
       <div className="h-16 flex items-center gap-3 px-4 border-b border-border">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-lg">
-          🐝
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br flex items-center justify-center text-lg">
+          Xcr9
         </div>
         {!collapsed && (
           <div>

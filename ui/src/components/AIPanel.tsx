@@ -169,7 +169,7 @@ export function AIPanel({ compact = false }: AIPanelProps) {
             </h1>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <p className="text-sm text-indigo-200/70">Powered by Gemini 2.0</p>
+              <p className="text-sm text-indigo-200/70">Powered by Xcr9</p>
             </div>
           </div>
         </div>

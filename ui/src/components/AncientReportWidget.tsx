@@ -353,45 +353,34 @@ export function AncientReportWidget({ hostname, compact = false }: AncientReport
         </div>
       )}
 
-      {/* Top TCP Connections - Sorted by most data transferred */}
-      {metrics?.tcp_connections && metrics.tcp_connections.length > 0 && (
+      {/* Network Load by Process - Top bandwidth consumers */}
+      {metrics?.process_flows && metrics.process_flows.length > 0 && (
         <div className="card">
-          <h3 className="font-semibold mb-3">Top TCP Connections</h3>
+          <h3 className="font-semibold mb-3">Network Load by Process</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-muted border-b border-border">
                   <th className="text-left py-2">Process</th>
-                  <th className="text-left py-2">Local Port</th>
-                  <th className="text-left py-2">Remote Port</th>
-                  <th className="text-left py-2">State</th>
-                  <th className="text-right py-2">Remote IP</th>
+                  <th className="text-right py-2">Sent</th>
+                  <th className="text-right py-2">Received</th>
+                  <th className="text-right py-2">Total</th>
+                  <th className="text-right py-2">Flows</th>
                 </tr>
               </thead>
               <tbody>
-                {[...metrics.tcp_connections]
-                  .sort((a, b) => {
-                    // Prioritize ESTABLISHED over LISTEN, then by port
-                    if (a.state === "ESTABLISHED" && b.state !== "ESTABLISHED") return -1;
-                    if (b.state === "ESTABLISHED" && a.state !== "ESTABLISHED") return 1;
-                    return a.local_port - b.local_port;
-                  })
-                  .slice(0, 5)
-                  .map((conn, i) => (
+                {[...metrics.process_flows]
+                  .sort((a, b) => (b.bytes_sent + b.bytes_received) - (a.bytes_sent + a.bytes_received))
+                  .slice(0, 8)
+                  .map((flow, i) => (
                   <tr key={i} className="border-b border-border/50 hover:bg-surface-hover">
-                    <td className="py-2 font-mono">{conn.process_name}</td>
-                    <td className="py-2 text-blue-400">{conn.local_port}</td>
-                    <td className="py-2 text-purple-400">{conn.remote_port || "-"}</td>
-                    <td className="py-2">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        conn.state === "ESTABLISHED" ? "bg-green-500/20 text-green-400" : "bg-yellow-500/20 text-yellow-400"
-                      }`}>
-                        {conn.state}
-                      </span>
+                    <td className="py-2 font-mono">{flow.process_name}</td>
+                    <td className="py-2 text-right text-blue-400">{formatBytes(flow.bytes_sent)}</td>
+                    <td className="py-2 text-right text-green-400">{formatBytes(flow.bytes_received)}</td>
+                    <td className="py-2 text-right text-purple-400 font-medium">
+                      {formatBytes(flow.bytes_sent + flow.bytes_received)}
                     </td>
-                    <td className="py-2 text-right text-muted font-mono text-xs">
-                      {conn.remote_ip && conn.remote_ip !== "0.0.0.0" ? conn.remote_ip : "-"}
-                    </td>
+                    <td className="py-2 text-right text-muted">{flow.active_flows}</td>
                   </tr>
                 ))}
               </tbody>
