@@ -8,8 +8,8 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   Legend,
   BarChart,
   Bar
@@ -291,14 +291,14 @@ export function MetricsPanel({ selectedNode, compact = false }: MetricsPanelProp
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-64 text-red-400">
+      <div className="flex items-center justify-center h-64 text-red-400 glass-card">
         <AlertTriangle className="mr-2" size={20} />
         Failed to load metrics
       </div>
@@ -324,7 +324,7 @@ export function MetricsPanel({ selectedNode, compact = false }: MetricsPanelProp
   const criticalAnomalies = anomalies.filter((a: AnomalyEvent) => a.severity === "critical");
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Drilldown Modal */}
       {selectedPid !== null && (
         <DrilldownModal 
@@ -336,46 +336,56 @@ export function MetricsPanel({ selectedNode, compact = false }: MetricsPanelProp
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between glass-header p-4 -mx-4 -mt-4 mb-4 rounded-b-xl sticky top-0 z-40">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Network size={24} className="text-blue-400" />
-            Network Metrics
+            <span className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+              <Network size={24} />
+            </span>
+            <span className="gradient-text">Network Metrics</span>
           </h1>
-          <p className="text-sm text-muted mt-1">
-            {selectedNode ? `Server: ${selectedNode}` : "Fleet-wide"} • {samples.length} samples
+          <p className="text-sm text-muted mt-1 flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${isLoading ? 'bg-yellow-400 animate-pulse' : 'bg-green-400 header-glow-success'}`} />
+            {selectedNode ? `Server: ${selectedNode}` : "Fleet-wide Overview"} 
+            <span className="text-slate-600">•</span> 
+            {samples.length} samples
           </p>
         </div>
         {anomalies.length > 0 && (
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${criticalAnomalies.length > 0 ? "bg-red-500/20 text-red-400 animate-pulse" : "bg-yellow-500/20 text-yellow-400"}`}>
-            <Bell size={14} />
-            <span className="text-sm font-medium">{criticalAnomalies.length > 0 ? `${criticalAnomalies.length} Critical` : `${anomalies.length} Alerts`}</span>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all ${criticalAnomalies.length > 0 ? "bg-red-500/10 text-red-400 border border-red-500/20 animate-pulse-subtle" : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"}`}>
+            <Bell size={16} />
+            <span className="text-sm font-semibold">{criticalAnomalies.length > 0 ? `${criticalAnomalies.length} Critical` : `${anomalies.length} Alerts`}</span>
           </div>
         )}
       </div>
 
       {/* Critical Alerts */}
       {criticalAnomalies.length > 0 && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+        <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/20 animate-slide-in">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle size={16} className="text-red-400" />
-            <span className="font-semibold text-red-400">Critical Alerts</span>
+            <span className="font-semibold text-red-400 tracking-wide uppercase text-xs">Critical Alerts</span>
           </div>
-          {criticalAnomalies.slice(0, 3).map((a: AnomalyEvent, i: number) => (
-            <p key={i} className="text-sm text-red-300">{a.description}</p>
-          ))}
+          <div className="grid gap-2">
+            {criticalAnomalies.slice(0, 3).map((a: AnomalyEvent, i: number) => (
+              <div key={i} className="flex items-center justify-between bg-red-500/10 p-2 rounded border border-red-500/10">
+                <span className="text-sm text-red-200">{a.description}</span>
+                <span className="text-xs text-red-400 font-mono">{new Date(a.timestamp).toLocaleTimeString()}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Context */}
+      {/* Heads-Up Display (HUD) Context */}
       {context && (
-        <div className="card bg-gradient-to-r from-slate-900/50 to-slate-800/50">
-          <div className="flex items-center gap-2 mb-3">
+        <div className="glass-panel p-3 flex flex-wrap gap-4 items-center justify-between animate-slide-in" style={{ animationDelay: '100ms' }}>
+          <div className="flex items-center gap-2 px-2 border-r border-slate-700/50">
             <Server size={16} className="text-cyan-400" />
-            <span className="font-semibold text-sm">System Context</span>
-            {context.oom_risk && <span className="px-2 py-0.5 text-xs bg-red-500/20 text-red-400 rounded-full animate-pulse">OOM Risk!</span>}
+            <span className="font-semibold text-sm text-slate-300">System Context</span>
+            {context.oom_risk && <span className="px-2 py-0.5 text-[10px] font-bold bg-red-500/20 text-red-400 rounded-full animate-pulse border border-red-500/30">OOM RISK</span>}
           </div>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-3 text-xs">
+          <div className="flex-1 grid grid-cols-2 md:grid-cols-6 gap-2">
             <ContextTile icon={<MemoryStick size={14} />} label="Memory" value={`${context.memory_used_percent.toFixed(0)}%`} isAlert={context.memory_used_percent > 80} />
             <ContextTile icon={<Cpu size={14} />} label="CPU Sys" value={`${context.cpu_system_percent.toFixed(1)}%`} isAlert={context.cpu_system_percent > 50} />
             <ContextTile label="SoftIRQ" value={`${context.softirq_net_percent.toFixed(1)}%`} isAlert={context.softirq_net_percent > 30} />
@@ -386,25 +396,8 @@ export function MetricsPanel({ selectedNode, compact = false }: MetricsPanelProp
         </div>
       )}
 
-      {/* Trends */}
-      {trends && (
-        <div className="card bg-gradient-to-r from-purple-900/20 to-indigo-900/20">
-          <div className="flex items-center gap-2 mb-3">
-            <Zap size={16} className="text-purple-400" />
-            <span className="font-semibold text-sm">Trends (5min vs baseline)</span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-            <TrendTile trend={trends.latency_p99} label="p99 Latency" unit="ms" />
-            <TrendTile trend={trends.latency_p50} label="p50 Latency" unit="ms" />
-            <TrendTile trend={trends.retransmits} label="Retransmits" />
-            <TrendTile trend={trends.packet_drops} label="Drops" />
-            <TrendTile trend={trends.connections} label="Connections" />
-          </div>
-        </div>
-      )}
-
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 animate-slide-in" style={{ animationDelay: '200ms' }}>
         <StatCard icon={<Activity size={16} />} label="Connections" value={connections?.active_connections ?? 0} color="text-blue-400" />
         <StatCard icon={<Wifi size={16} />} label="Established" value={connections?.established ?? 0} color="text-green-400" />
         <StatCard label="Time Wait" value={connections?.time_wait ?? 0} color="text-yellow-400" />
@@ -415,35 +408,68 @@ export function MetricsPanel({ selectedNode, compact = false }: MetricsPanelProp
         <StatCard icon={<AlertTriangle size={16} />} label="Drops" value={connections?.packet_drops ?? 0} color={(connections?.packet_drops ?? 0) > 10 ? "text-red-400" : "text-green-400"} isAlert={(connections?.packet_drops ?? 0) > 10} />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <ChartCard title="Latency (ms)" icon={<Activity size={16} className="text-blue-400" />} chartData={chartData} lines={[{key: "p50", color: "#22c55e"}, {key: "p90", color: "#eab308"}, {key: "p99", color: "#ef4444"}]} />
-        <ChartCard title="Connection Rate" icon={<TrendingUp size={16} className="text-cyan-400" />} chartData={chartData} lines={[{key: "openRate", color: "#06b6d4"}, {key: "closeRate", color: "#ec4899"}]} />
-        <ChartCard title="Drops" icon={<AlertTriangle size={16} className="text-red-400" />} chartData={chartData} lines={[{key: "drops", color: "#ef4444"}]} />
+      {/* Trends */}
+      {trends && (
+        <div className="glass-panel p-4 animate-slide-in" style={{ animationDelay: '300ms' }}>
+          <div className="flex items-center gap-2 mb-4">
+            <Zap size={16} className="text-purple-400" />
+            <span className="font-semibold text-sm uppercase tracking-wider text-muted">Trend Analysis (5m vs 1h)</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <TrendTile trend={trends.latency_p99} label="p99 Latency" unit="ms" />
+            <TrendTile trend={trends.latency_p50} label="p50 Latency" unit="ms" />
+            <TrendTile trend={trends.retransmits} label="Retransmits" />
+            <TrendTile trend={trends.packet_drops} label="Drops" />
+            <TrendTile trend={trends.connections} label="Connections" />
+          </div>
+        </div>
+      )}
+
+      {/* Main Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-in" style={{ animationDelay: '400ms' }}>
+        <ChartCard 
+          title="Latency (ms)" 
+          icon={<Activity size={16} className="text-blue-400" />} 
+          chartData={chartData} 
+          lines={[{key: "p50", color: "#22c55e"}, {key: "p90", color: "#eab308"}, {key: "p99", color: "#ef4444"}]} 
+        />
+        <ChartCard 
+          title="Connection Rate" 
+          icon={<TrendingUp size={16} className="text-cyan-400" />} 
+          chartData={chartData} 
+          lines={[{key: "openRate", color: "#06b6d4"}, {key: "closeRate", color: "#ec4899"}]} 
+        />
+        <ChartCard 
+          title="Drops" 
+          icon={<AlertTriangle size={16} className="text-red-400" />} 
+          chartData={chartData} 
+          lines={[{key: "drops", color: "#ef4444"}]} 
+        />
       </div>
 
-      {/* Top Processes - Clickable for Drilldown */}
+      {/* Top Processes */}
       {context && context.top_cpu_processes.length > 0 && (
-        <div className="card">
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
+        <div className="glass-card p-6 animate-slide-in" style={{ animationDelay: '500ms' }}>
+          <h3 className="font-semibold mb-6 flex items-center gap-2 text-sm uppercase tracking-wider text-muted">
             <Cpu size={16} className="text-orange-400" />
             Top Network Processes by CPU
-            <span className="text-xs text-muted font-normal">(click for details)</span>
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             {context.top_cpu_processes.slice(0, 5).map((proc: ProcessHealth, i: number) => (
               <div 
                 key={i} 
                 onClick={() => setSelectedPid(proc.pid)}
-                className="p-2 rounded bg-surface-hover border border-border/50 text-xs cursor-pointer hover:border-primary/50 hover:bg-primary/10 transition-all"
+                className="group p-3 rounded-xl bg-slate-800/30 border border-slate-700/50 hover:border-blue-500/30 hover:bg-slate-800/60 cursor-pointer transition-all hover:-translate-y-1"
               >
-                <div className="flex justify-between mb-1">
-                  <span className="font-mono text-blue-400 truncate">{proc.process_name}</span>
-                  <span className={`font-bold ${proc.cpu_percent > 50 ? "text-red-400" : "text-green-400"}`}>{proc.cpu_percent.toFixed(1)}%</span>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-mono text-blue-400 text-sm truncate font-medium group-hover:text-blue-300">{proc.process_name}</span>
+                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${proc.cpu_percent > 50 ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"}`}>
+                    {proc.cpu_percent.toFixed(1)}%
+                  </span>
                 </div>
-                <div className="flex justify-between text-muted">
-                  <span>Mem: {proc.memory_mb.toFixed(0)}MB</span>
-                  <span>Socks: {proc.socket_count}</span>
+                <div className="flex justify-between text-[11px] text-muted group-hover:text-slate-400">
+                  <span>{proc.memory_mb.toFixed(0)}MB Mem</span>
+                  <span>{proc.socket_count} Socks</span>
                 </div>
               </div>
             ))}
@@ -451,73 +477,75 @@ export function MetricsPanel({ selectedNode, compact = false }: MetricsPanelProp
         </div>
       )}
 
-      {/* Bandwidth Table - Clickable */}
-      <div className="card">
-        <h3 className="font-semibold mb-4 flex items-center gap-2">
+      {/* Bandwidth Table */}
+      <div className="glass-card p-6 animate-slide-in" style={{ animationDelay: '600ms' }}>
+        <h3 className="font-semibold mb-6 flex items-center gap-2 text-sm uppercase tracking-wider text-muted">
           <ArrowUpDown size={16} className="text-purple-400" />
           Bandwidth by Process
         </h3>
         {bandwidth.length === 0 ? (
-          <p className="text-center text-muted py-8">No data</p>
+          <p className="text-center text-muted py-8 italic">No active bandwidth data</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-muted border-b border-border">
-                <th className="text-left py-2">Process</th>
-                <th className="text-right py-2">Sent</th>
-                <th className="text-right py-2">Recv</th>
-                <th className="py-2">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bandwidth.slice(0, 10).map((proc: ProcessBandwidth, i: number) => {
-                const maxBytes = bandwidth[0]?.total_bytes || 1;
-                const barWidth = Math.max(5, (proc.total_bytes / maxBytes) * 100);
-                return (
-                  <tr 
-                    key={i} 
-                    onClick={() => setSelectedPid(proc.pid)}
-                    className="border-b border-border/50 hover:bg-surface-hover cursor-pointer"
-                  >
-                    <td className="py-2 font-mono text-blue-400">{proc.process_name}</td>
-                    <td className="py-2 text-right">{formatBytes(proc.bytes_sent)}</td>
-                    <td className="py-2 text-right text-green-400">{formatBytes(proc.bytes_received)}</td>
-                    <td className="py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-surface-hover rounded-full h-2 overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500" style={{ width: `${barWidth}%` }} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-muted border-b border-white/5 font-medium text-xs uppercase tracking-wider">
+                  <th className="text-left py-3 px-2">Process</th>
+                  <th className="text-right py-3 px-2">Sent</th>
+                  <th className="text-right py-3 px-2">Recv</th>
+                  <th className="py-3 px-2 text-left pl-6">Total Activity</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {bandwidth.slice(0, 10).map((proc: ProcessBandwidth, i: number) => {
+                  const maxBytes = bandwidth[0]?.total_bytes || 1;
+                  const barWidth = Math.max(2, (proc.total_bytes / maxBytes) * 100);
+                  return (
+                    <tr 
+                      key={i} 
+                      onClick={() => setSelectedPid(proc.pid)}
+                      className="hover:bg-white/5 cursor-pointer transition-colors"
+                    >
+                      <td className="py-3 px-2 font-mono text-blue-400 font-medium">{proc.process_name}</td>
+                      <td className="py-3 px-2 text-right text-slate-300">{formatBytes(proc.bytes_sent)}</td>
+                      <td className="py-3 px-2 text-right text-green-400">{formatBytes(proc.bytes_received)}</td>
+                      <td className="py-3 px-2 pl-6">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 bg-slate-800/50 rounded-full h-1.5 overflow-hidden w-32">
+                            <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" style={{ width: `${barWidth}%` }} />
+                          </div>
+                          <span className="text-xs text-muted w-16 text-right font-mono">{formatBytes(proc.total_bytes)}</span>
                         </div>
-                        <span className="text-xs text-muted w-16 text-right">{formatBytes(proc.total_bytes)}</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* Flows */}
-      <div className="card">
-        <h3 className="font-semibold mb-4 flex items-center gap-2">
+      {/* Flows Grid */}
+      <div className="glass-card p-6 animate-slide-in" style={{ animationDelay: '700ms' }}>
+        <h3 className="font-semibold mb-6 flex items-center gap-2 text-sm uppercase tracking-wider text-muted">
           <Network size={16} className="text-cyan-400" />
           Active Flows
         </h3>
         {top_flows.length === 0 ? (
-          <p className="text-center text-muted py-8">No flows</p>
+          <p className="text-center text-muted py-8 italic">No active flows</p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             {top_flows.slice(0, 16).map((flow: FlowEdge, i: number) => (
-              <div key={i} className={`p-2 rounded-lg bg-surface-hover border-l-2 ${flow.state === "ESTABLISHED" ? "border-l-green-500" : "border-l-yellow-500"} text-xs`}>
-                <div className="flex items-center gap-1 mb-1">
-                  <span className="font-mono text-blue-400">{flow.source_process}</span>
-                  <span className="text-muted">→</span>
-                  <span className="font-mono text-muted">{flow.dest_ip === "0.0.0.0" ? "*" : flow.dest_ip.split(".").pop()}:{flow.dest_port}</span>
+              <div key={i} className={`p-3 rounded-lg bg-slate-800/20 border-l-[3px] ${flow.state === "ESTABLISHED" ? "border-l-green-500 bg-green-500/5" : "border-l-yellow-500 bg-yellow-500/5"} hover:bg-white/5 transition-colors text-xs`}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="font-mono text-blue-400 font-medium truncate max-w-[100px]">{flow.source_process}</span>
+                  <span className="text-muted text-[10px]">→</span>
+                  <span className="font-mono text-slate-300 truncate">{flow.dest_ip === "0.0.0.0" ? "*" : flow.dest_ip.split(".").pop()}:{flow.dest_port}</span>
                 </div>
-                <div className="flex justify-between text-muted">
-                  <span>{flow.connection_count}×</span>
-                  <span className={flow.state === "ESTABLISHED" ? "text-green-400" : "text-yellow-400"}>{flow.state.slice(0, 5)}</span>
+                <div className="flex justify-between text-muted border-t border-white/5 pt-2 mt-1">
+                  <span>{flow.connection_count} conns</span>
+                  <span className={flow.state === "ESTABLISHED" ? "text-green-400 font-medium" : "text-yellow-400 font-medium"}>{flow.state.slice(0, 5)}</span>
                 </div>
               </div>
             ))}
@@ -532,9 +560,10 @@ export function MetricsPanel({ selectedNode, compact = false }: MetricsPanelProp
 function DrilldownModal({ pid, data, loading, onClose }: { pid: number; data?: ProcessDrilldown; loading: boolean; onClose: () => void }) {
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center" onClick={onClose}>
-        <div className="bg-surface p-8 rounded-xl">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center" onClick={onClose}>
+        <div className="glass-card p-8 rounded-2xl flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-blue-400 animate-pulse">Analyzing process...</span>
         </div>
       </div>
     );
@@ -543,106 +572,121 @@ function DrilldownModal({ pid, data, loading, onClose }: { pid: number; data?: P
   if (!data) return null;
 
   const histogramData = data.rtt_histogram.map(b => ({
-    range: `${b.range_start_ms}-${b.range_end_ms}ms`,
+    range: `${b.range_start_ms}-${b.range_end_ms}`, // Simplified label
     count: b.count,
     percentage: b.percentage
   }));
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface rounded-xl max-w-4xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
+      <div className="glass-modal max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-scale-in" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="sticky top-0 bg-surface border-b border-border p-4 flex items-center justify-between">
+        <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Layers size={20} className="text-purple-400" />
-              Process Drilldown: {data.health.process_name}
+            <h2 className="text-xl font-bold flex items-center gap-3 text-white">
+              <span className="p-2 rounded-lg bg-pink-500/20 text-pink-400">
+                <Layers size={20} />
+              </span>
+              Process Drilldown: <span className="text-blue-400 font-mono">{data.health.process_name}</span>
             </h2>
-            <p className="text-sm text-muted">PID: {pid} • {data.connection_count} connections</p>
+            <p className="text-sm text-muted mt-1 ml-11">PID: <span className="font-mono text-slate-300">{pid}</span> • {data.connection_count} active connections</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-surface-hover rounded-lg">
-            <X size={20} />
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-muted hover:text-white transition-colors">
+            <X size={24} />
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar">
           {/* Health Snapshot */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard icon={<Cpu size={16} />} label="CPU" value={`${data.health.cpu_percent.toFixed(1)}%`} color={data.health.cpu_percent > 50 ? "text-red-400" : "text-green-400"} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard icon={<Cpu size={16} />} label="CPU Usage" value={`${data.health.cpu_percent.toFixed(1)}%`} color={data.health.cpu_percent > 50 ? "text-red-400" : "text-green-400"} />
             <StatCard icon={<MemoryStick size={16} />} label="Memory" value={`${data.health.memory_mb.toFixed(0)}MB`} color="text-blue-400" />
-            <StatCard icon={<FileText size={16} />} label="FDs" value={data.health.open_fds} color="text-purple-400" />
+            <StatCard icon={<FileText size={16} />} label="Open FDs" value={data.health.open_fds} color="text-purple-400" />
             <StatCard icon={<Network size={16} />} label="Sockets" value={data.health.socket_count} color="text-cyan-400" />
           </div>
 
-          {/* Syscall Breakdown */}
-          <div className="card">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Clock size={16} className="text-orange-400" />
-              Syscall Breakdown
-            </h3>
-            <div className="grid grid-cols-5 gap-2 text-xs">
-              <div className="p-2 rounded bg-slate-800/50 text-center">
-                <p className="text-lg font-bold text-blue-400">{data.syscalls.read_count.toLocaleString()}</p>
-                <p className="text-muted">read</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+             {/* Syscall Breakdown */}
+            <div className="glass-panel p-5">
+              <h3 className="font-semibold mb-4 flex items-center gap-2 text-sm uppercase text-muted">
+                <Clock size={16} className="text-orange-400" />
+                Syscall Activity
+              </h3>
+              <div className="grid grid-cols-5 gap-3 text-xs">
+                {Object.entries({
+                  read: { val: data.syscalls.read_count, col: "text-blue-400" },
+                  write: { val: data.syscalls.write_count, col: "text-green-400" },
+                  send: { val: data.syscalls.sendmsg_count, col: "text-purple-400" },
+                  recv: { val: data.syscalls.recvmsg_count, col: "text-cyan-400" },
+                  poll: { val: data.syscalls.poll_epoll_count, col: "text-yellow-400" }
+                }).map(([key, info]) => (
+                  <div key={key} className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 text-center hover:border-slate-600 transition-colors">
+                    <p className={`text-lg font-bold ${info.col} mb-1`}>{info.val.toLocaleString()}</p>
+                    <p className="text-muted uppercase tracking-wider text-[10px]">{key}</p>
+                  </div>
+                ))}
               </div>
-              <div className="p-2 rounded bg-slate-800/50 text-center">
-                <p className="text-lg font-bold text-green-400">{data.syscalls.write_count.toLocaleString()}</p>
-                <p className="text-muted">write</p>
-              </div>
-              <div className="p-2 rounded bg-slate-800/50 text-center">
-                <p className="text-lg font-bold text-purple-400">{data.syscalls.sendmsg_count}</p>
-                <p className="text-muted">sendmsg</p>
-              </div>
-              <div className="p-2 rounded bg-slate-800/50 text-center">
-                <p className="text-lg font-bold text-cyan-400">{data.syscalls.recvmsg_count}</p>
-                <p className="text-muted">recvmsg</p>
-              </div>
-              <div className="p-2 rounded bg-slate-800/50 text-center">
-                <p className="text-lg font-bold text-yellow-400">{data.syscalls.poll_epoll_count}</p>
-                <p className="text-muted">poll/epoll</p>
+            </div>
+
+            {/* RTT Histogram */}
+            <div className="glass-panel p-5">
+              <h3 className="font-semibold mb-4 text-sm uppercase text-muted">Latency Distribution (RTT)</h3>
+              <div className="h-40">
+                {histogramData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={histogramData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                      <XAxis dataKey="range" tick={{ fontSize: 10, fill: '#64748b' }} stroke="rgba(255,255,255,0.1)" />
+                      <YAxis stroke="rgba(255,255,255,0.1)" fontSize={10} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'rgba(15, 23, 42, 0.95)', 
+                          border: '1px solid rgba(255,255,255,0.1)', 
+                          borderRadius: '8px' 
+                        }} 
+                        cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                      />
+                      <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted text-sm">No latency data available</div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* RTT Histogram */}
-          {histogramData.length > 0 && (
-            <div className="card">
-              <h3 className="font-semibold mb-3">RTT Histogram</h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={histogramData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a38" />
-                    <XAxis dataKey="range" tick={{ fontSize: 10 }} stroke="#606070" />
-                    <YAxis stroke="#606070" fontSize={10} />
-                    <Tooltip contentStyle={{ backgroundColor: "#1a1a24", border: "1px solid #2a2a38", borderRadius: "8px" }} />
-                    <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
-          {/* Flows */}
+          {/* Flows Table */}
           {data.flows.length > 0 && (
-            <div className="card">
-              <h3 className="font-semibold mb-3">Connections ({data.flows.length})</h3>
-              <div className="max-h-48 overflow-auto">
+            <div className="glass-panel p-0 overflow-hidden">
+              <div className="p-4 border-b border-white/10 bg-white/5">
+                <h3 className="font-semibold text-sm uppercase text-muted">Active Connections ({data.flows.length})</h3>
+              </div>
+              <div className="max-h-64 overflow-auto">
                 <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-surface">
-                    <tr className="text-muted">
-                      <th className="text-left py-1">Source</th>
-                      <th className="text-left py-1">Destination</th>
-                      <th className="text-left py-1">State</th>
-                      <th className="text-right py-1">RTT</th>
+                  <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10 shadow-sm">
+                    <tr className="text-muted font-medium text-left">
+                      <th className="py-3 px-4">Remote Address</th>
+                      <th className="py-3 px-4">State</th>
+                      <th className="py-3 px-4 text-right">RTT (ms)</th>
+                      <th className="py-3 px-4 text-right">Traffic</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {data.flows.slice(0, 20).map((f, i) => (
-                      <tr key={i} className="border-t border-border/30">
-                        <td className="py-1 font-mono">{f.src_ip}:{f.src_port}</td>
-                        <td className="py-1 font-mono">{f.dst_ip}:{f.dst_port}</td>
-                        <td className={`py-1 ${f.state === "ESTABLISHED" ? "text-green-400" : "text-yellow-400"}`}>{f.state}</td>
-                        <td className="py-1 text-right">{f.rtt_ms.toFixed(2)}ms</td>
+                  <tbody className="divide-y divide-white/5">
+                    {data.flows.slice(0, 50).map((f, i) => (
+                      <tr key={i} className="hover:bg-white/5 transition-colors">
+                        <td className="py-3 px-4 font-mono text-slate-300">
+                          {f.dst_ip}:{f.dst_port}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${f.state === "ESTABLISHED" ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"}`}>
+                            {f.state}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-purple-300">{f.rtt_ms.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-right text-muted">
+                          Running
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -653,11 +697,19 @@ function DrilldownModal({ pid, data, loading, onClose }: { pid: number; data?: P
 
           {/* Anomalies */}
           {data.recent_anomalies.length > 0 && (
-            <div className="card bg-red-500/5 border border-red-500/20">
-              <h3 className="font-semibold mb-2 text-red-400">Recent Anomalies</h3>
-              {data.recent_anomalies.map((a, i) => (
-                <p key={i} className="text-sm text-red-300">{a.description}</p>
-              ))}
+            <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+              <h3 className="font-semibold mb-3 text-red-400 flex items-center gap-2">
+                <AlertTriangle size={16} />
+                Recent Anomalies
+              </h3>
+              <div className="space-y-2">
+                {data.recent_anomalies.map((a, i) => (
+                  <p key={i} className="text-sm text-red-200 flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                    {a.description}
+                  </p>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -669,21 +721,24 @@ function DrilldownModal({ pid, data, loading, onClose }: { pid: number; data?: P
 // Helper Components
 function StatCard({ icon, label, value, color = "text-white", isAlert = false }: { icon?: React.ReactNode; label: string; value: number | string; color?: string; isAlert?: boolean }) {
   return (
-    <div className={`card p-2 ${isAlert ? "border-red-500/50" : ""}`}>
-      <div className="flex items-center gap-1 mb-0.5">
-        {icon && <span className={color}>{icon}</span>}
-        <span className="text-xs text-muted truncate">{label}</span>
+    <div className={`glass-card hover-lift p-4 flex flex-col justify-between h-full group ${isAlert ? "border-red-500/30 bg-red-500/5" : ""}`}>
+      <div className="flex items-center gap-2 mb-2">
+        {icon && <span className={`${color} opacity-80 group-hover:opacity-100 transition-opacity`}>{icon}</span>}
+        <span className="text-xs text-muted uppercase tracking-wider font-medium truncate">{label}</span>
       </div>
-      <p className={`text-lg font-bold ${color}`}>{value}</p>
+      <p className={`text-2xl font-bold ${color} tracking-tight`}>{value}</p>
     </div>
   );
 }
 
 function ContextTile({ icon, label, value, isAlert = false }: { icon?: React.ReactNode; label: string; value: string; isAlert?: boolean }) {
   return (
-    <div className={`p-2 rounded bg-slate-800/50 ${isAlert ? "border border-orange-500/50" : "border border-slate-700/50"}`}>
-      <div className="flex items-center gap-1 text-muted mb-0.5">{icon}<span className="truncate">{label}</span></div>
-      <p className={`font-bold ${isAlert ? "text-orange-400" : "text-white"}`}>{value}</p>
+    <div className={`glass-panel p-3 flex flex-col justify-center h-full ${isAlert ? "border-orange-500/30 bg-orange-500/5" : ""}`}>
+      <div className="flex items-center gap-2 text-muted mb-1">
+        {icon}
+        <span className="text-[10px] uppercase tracking-wider font-semibold opacity-70">{label}</span>
+      </div>
+      <p className={`font-mono font-bold text-sm ${isAlert ? "text-orange-400" : "text-white"}`}>{value}</p>
     </div>
   );
 }
@@ -692,16 +747,17 @@ function TrendTile({ trend, label, unit = "" }: { trend: TrendComparison; label:
   const isUp = trend.trend === "up";
   const isDown = trend.trend === "down";
   const trendColor = trend.severity === "critical" ? "text-red-400" : trend.severity === "warning" ? "text-yellow-400" : "text-green-400";
-  const bgColor = trend.severity === "critical" ? "bg-red-500/10 border-red-500/30" : trend.severity === "warning" ? "bg-yellow-500/10 border-yellow-500/30" : "bg-slate-800/50 border-slate-700/50";
+  const borderColor = trend.severity === "critical" ? "border-red-500/30" : trend.severity === "warning" ? "border-yellow-500/30" : "border-white/5";
+  const bgClass = trend.severity === "critical" ? "bg-red-500/5" : trend.severity === "warning" ? "bg-yellow-500/5" : "";
   
   return (
-    <div className={`p-2 rounded border ${bgColor}`}>
-      <div className="text-muted mb-1 truncate">{label}</div>
-      <div className="flex items-center justify-between">
-        <span className="font-bold text-white">{trend.current_5min.toFixed(1)}{unit}</span>
-        <span className={`flex items-center text-xs ${trendColor}`}>
-          {isUp && <TrendingUp size={12} className="mr-0.5" />}
-          {isDown && <TrendingDown size={12} className="mr-0.5" />}
+    <div className={`glass-panel p-3 ${borderColor} ${bgClass}`}>
+      <div className="text-muted text-xs uppercase tracking-wider font-medium mb-1 truncate">{label}</div>
+      <div className="flex items-end justify-between">
+        <span className="font-bold text-lg text-white tracking-tight">{trend.current_5min.toFixed(1)}{unit}</span>
+        <span className={`flex items-center text-xs font-medium ${trendColor} bg-white/5 px-1.5 py-0.5 rounded`}>
+          {isUp && <TrendingUp size={12} className="mr-1" />}
+          {isDown && <TrendingDown size={12} className="mr-1" />}
           {trend.delta_percent > 0 ? "+" : ""}{trend.delta_percent.toFixed(0)}%
         </span>
       </div>
@@ -716,24 +772,67 @@ interface ChartLine {
 
 function ChartCard({ title, icon, chartData, lines }: { title: string; icon: React.ReactNode; chartData: { time: string }[]; lines: ChartLine[] }) {
   return (
-    <div className="card">
-      <h3 className="font-semibold mb-3 flex items-center gap-2">{icon}{title}</h3>
-      <div className="h-40">
+    <div className="glass-card hover-lift p-4">
+      <h3 className="font-semibold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider text-muted">
+        {icon}
+        {title}
+      </h3>
+      <div className="h-48">
         {chartData.length > 1 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2a2a38" />
-              <XAxis dataKey="time" tick={false} stroke="#606070" />
-              <YAxis stroke="#606070" fontSize={10} />
-              <Tooltip contentStyle={{ backgroundColor: "#1a1a24", border: "1px solid #2a2a38", borderRadius: "8px" }} />
+            <AreaChart data={chartData}>
+              <defs>
+                {lines.map((line) => (
+                  <linearGradient key={line.key} id={`gradient-${line.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={line.color} stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor={line.color} stopOpacity={0}/>
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <XAxis 
+                dataKey="time" 
+                tick={{ fill: '#64748b', fontSize: 10 }} 
+                axisLine={false}
+                tickLine={false}
+                dy={10}
+              />
+              <YAxis 
+                tick={{ fill: '#64748b', fontSize: 10 }} 
+                axisLine={false}
+                tickLine={false}
+                dx={-10}
+              />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: 'rgba(15, 23, 42, 0.9)', 
+                  border: '1px solid rgba(255,255,255,0.1)', 
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  backdropFilter: 'blur(8px)'
+                }}
+                itemStyle={{ fontSize: '12px' }}
+                labelStyle={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px' }}
+              />
               {lines.map((line) => (
-                <Line key={line.key} type="monotone" dataKey={line.key} stroke={line.color} strokeWidth={2} dot={false} />
+                <Area 
+                  key={line.key} 
+                  type="monotone" 
+                  dataKey={line.key} 
+                  stroke={line.color} 
+                  fill={`url(#gradient-${line.key})`}
+                  strokeWidth={2}
+                  activeDot={{ r: 4, strokeWidth: 0 }}
+                />
               ))}
-              <Legend />
-            </LineChart>
+              <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+            </AreaChart>
           </ResponsiveContainer>
         ) : (
-          <div className="flex items-center justify-center h-full text-muted text-sm">Collecting...</div>
+          <div className="flex flex-col items-center justify-center h-full text-muted space-y-2">
+            <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+            <span className="text-xs">Gathering metrics...</span>
+          </div>
         )}
       </div>
     </div>
