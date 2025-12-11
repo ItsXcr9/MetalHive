@@ -84,7 +84,10 @@ services:
       - ./config.yaml:/etc/metalhive/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock  # Write access for product management
       - /home:/home:ro  # Access to product directories
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
+      - TZ=Asia/Tehran
       - METALHIVE_SERVER_HOST=0.0.0.0
       - METALHIVE_SERVER_PORT=8080
       - METALHIVE_NATS_URL=nats://nats:4222
@@ -113,7 +116,11 @@ services:
       - "8082:8081"   # Changed to 8082 to avoid conflict
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
     environment:
+      - TZ=Asia/Tehran
       - METALMIND_HOST=0.0.0.0
       - METALMIND_PORT=8081
       - METALMIND_AI_PROVIDER=openai
