@@ -87,7 +87,7 @@ var productPorts = map[ProductType]struct {
 	APIPort int
 	UIPort  int
 }{
-	ProductTypeAncientReport: {APIPort: 8800, UIPort: 6080},  // Analysis uses host network on port 8800
+	ProductTypeAncientReport: {APIPort: 6800, UIPort: 6080},  // Analysis exposes 6800->8800
 	ProductTypeMithrilLog:    {APIPort: 9900, UIPort: 0},
 	ProductTypeMetalHive:     {APIPort: 8080, UIPort: 3002},
 }
