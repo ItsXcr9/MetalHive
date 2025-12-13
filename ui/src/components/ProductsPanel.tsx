@@ -15,8 +15,10 @@ import {
   AlertCircle,
   RefreshCw,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Terminal
 } from "lucide-react";
+import { InstallAgentModal } from "./InstallAgentModal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -65,6 +67,7 @@ async function productAction(productKey: string, action: string): Promise<any> {
 export function ProductsPanel() {
   const queryClient = useQueryClient();
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+  const [showInstallModal, setShowInstallModal] = useState(false);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["products"],
@@ -114,12 +117,20 @@ export function ProductsPanel() {
             Manage and monitor your Xcr9 product suite
           </p>
         </div>
-        <button 
-          onClick={() => refetch()} 
-          className="btn btn-secondary flex items-center gap-2"
-        >
-          <RefreshCw size={16} /> Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowInstallModal(true)} 
+            className="btn btn-primary flex items-center gap-2"
+          >
+            <Terminal size={16} /> Install Agent on Server
+          </button>
+          <button 
+            onClick={() => refetch()} 
+            className="btn btn-secondary flex items-center gap-2"
+          >
+            <RefreshCw size={16} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Product Cards */}
@@ -147,10 +158,23 @@ export function ProductsPanel() {
                 actionMutation.mutate({ key: product.key, action })
               }
               isLoading={actionMutation.isPending}
+              onInstallAgent={() => setShowInstallModal(true)}
             />
           ))
         )}
       </div>
+
+      {/* Install Agent Modal */}
+      <InstallAgentModal
+        isOpen={showInstallModal}
+        onClose={() => setShowInstallModal(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["products"] });
+          queryClient.invalidateQueries({ queryKey: ["nodes"] });
+          setShowInstallModal(false);
+        }}
+        productName="AncientReport Agent"
+      />
     </div>
   );
 }
@@ -161,12 +185,14 @@ function ProductCard({
   onToggleExpand,
   onAction,
   isLoading,
+  onInstallAgent,
 }: {
   product: ProductStatus;
   expanded: boolean;
   onToggleExpand: () => void;
   onAction: (action: string) => void;
   isLoading: boolean;
+  onInstallAgent?: () => void;
 }) {
   const getStatusColor = () => {
     if (product.running) return "text-green-400";

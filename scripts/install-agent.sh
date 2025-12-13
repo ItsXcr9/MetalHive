@@ -49,7 +49,7 @@ cat > docker-compose.yaml << EOF
 
 services:
   agent:
-    image: ghcr.io/your-org/ancientreport-agent:latest
+    image: ghcr.io/itsxcr9/ancientreport/agent:latest
     container_name: metalhive-agent
     hostname: $(hostname)
     network_mode: host

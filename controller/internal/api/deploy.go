@@ -152,7 +152,7 @@ cd "${INSTALL_DIR}"
 cat > docker-compose.yaml << 'DOCKEREOF'
 services:
   agent:
-    image: ghcr.io/your-org/ancientreport-agent:latest
+    image: ghcr.io/itsxcr9/ancientreport/agent:latest
     container_name: metalhive-agent
     hostname: %s
     network_mode: host
