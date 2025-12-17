@@ -10,40 +10,44 @@
 #       For eBPF observability, use AncientReport's docker-compose.agent.yml
 
 services:
-  agent:
+  hive-agent:
     image: registry.xcr9.site/images/metalhive-agent:latest
     build:
       context: ./agent
       dockerfile: Dockerfile
     container_name: metalhive-agent
-    hostname: ${HOSTNAME:-agent}
-    # Required for nsenter to access host PID namespace and execute commands on host
-    pid: host               # Share host's PID namespace (required for nsenter -t 1)
-    privileged: true        # Required for nsenter to enter host namespaces
+    hostname: xcr9
+
+    pid: host
+    privileged: true
+
     environment:
-      TZ: ${TZ:-UTC}
-      # MetalHive Central Server
-      CONTROLLER_URL: http://${CENTRAL_SERVER_IP:-65.109.200.75}:8080
+      TZ: ${TZ:-Asia/Tehran}
+
+      CONTROLLER_URL: http://65.109.200.75:8080
+      HIVE_CONTROLLER: http://65.109.200.75:8080
       NATS_URL: nats://${CENTRAL_SERVER_IP:-65.109.200.75}:4223
-      # Agent Configuration
-      AGENT_ID: ${AGENT_ID:-}
-      AGENT_LABELS: ${AGENT_LABELS:-}
+
+      AGENT_ID: ${AGENT_ID:-30}
+      AGENT_LABELS: ${AGENT_LABELS:-main}
       MDNS_ENABLED: "false"
       METRICS_INTERVAL: "10"
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      # HiveVault Configuration Sync
+      LOG_LEVEL: ${LOG_LEVEL:-error}
+
       VAULT_SYNC_ENABLED: ${VAULT_SYNC_ENABLED:-true}
       VAULT_SYNC_INTERVAL: ${VAULT_SYNC_INTERVAL:-60}
       VAULT_NAMESPACES: ${VAULT_NAMESPACES:-/global/,/production/}
+
     volumes:
-      # Docker container monitoring & management
       - /var/run/docker.sock:/var/run/docker.sock:rw
-      # Timezone
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
+
     restart: unless-stopped
+
     logging:
-      driver: json-file
+      driver: syslog
       options:
-        max-size: "10m"
-        max-file: "3"
+        syslog-address: "udp://65.109.200.75:1555"
+        syslog-facility: "daemon"
+        tag: "metalhive-agent"
