@@ -271,28 +271,34 @@ export function ServerDetailView({ hostname, onBack }: ServerDetailViewProps) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["server-detail", hostname],
     queryFn: () => fetchServerData(hostname),
-    refetchInterval: 10000,
+    refetchInterval: 15000, // Slower refresh
+    staleTime: 10000, // Cache for 10 seconds
   });
 
-  // AI Predictions query
+  // AI Predictions query - lazy load after primary data
   const { data: aiData } = useQuery({
     queryKey: ["ai-predictions", hostname],
     queryFn: () => fetchAIPredictions(hostname),
-    refetchInterval: 30000,
+    refetchInterval: 60000, // 1 minute - AI data doesn't change fast
+    staleTime: 30000, // Cache for 30 seconds
+    enabled: !isLoading, // Only fetch after primary data loads
   });
 
-  // ML Status query
+  // ML Status query - global, rarely changes
   const { data: mlStatus } = useQuery({
     queryKey: ["ml-status"],
     queryFn: fetchMLStatus,
-    refetchInterval: 60000,
+    refetchInterval: 120000, // 2 minutes - status barely changes
+    staleTime: 60000, // Cache for 1 minute
   });
 
-  // Process flows query
+  // Process flows query - lazy load after primary data
   const { data: processFlows } = useQuery({
     queryKey: ["process-flows", hostname],
     queryFn: () => fetchProcessFlows(hostname),
-    refetchInterval: 30000,
+    refetchInterval: 60000, // 1 minute
+    staleTime: 30000, // Cache for 30 seconds
+    enabled: !isLoading, // Only fetch after primary data loads
   });
 
   const ancientReportUrl = `${METRICS_API}?server=${encodeURIComponent(hostname)}`;
