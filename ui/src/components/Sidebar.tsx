@@ -10,11 +10,12 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
-  Package
+  Package,
+  Sparkles
 } from "lucide-react";
 import { useState } from "react";
 
-type Panel = "dashboard" | "nodes" | "containers" | "shell" | "config" | "ai" | "metrics" | "products";
+type Panel = "dashboard" | "nodes" | "containers" | "shell" | "config" | "ai" | "metrics" | "products" | "intelligence";
 
 interface SidebarProps {
   activePanel: Panel;
@@ -29,6 +30,7 @@ const navItems: { id: Panel; icon: typeof LayoutDashboard; label: string }[] = [
   { id: "shell", icon: Terminal, label: "HiveShell" },
   { id: "config", icon: Settings, label: "HiveVault" },
   { id: "ai", icon: Brain, label: "MetalMind" },
+  { id: "intelligence", icon: Sparkles, label: "Fleet Intelligence" },
   { id: "metrics", icon: BarChart3, label: "Metrics" },
 ];
 

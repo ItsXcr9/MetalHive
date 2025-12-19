@@ -166,39 +166,39 @@ services:
   # Development Agent (simulates a node)
   # ===========================================================================
 
-  agent-dev:
-    build:
-      context: ./agent
-      dockerfile: Dockerfile
-    container_name: metalhive-agent-dev
-    hostname: xcr9
-    # Required for nsenter to access host PID namespace and execute commands on host
-    pid: host               # Share host's PID namespace (required for nsenter -t 1)
-    privileged: true        # Required for nsenter to enter host namespaces
-    environment:
-      TZ: ${TZ:-Asia/Tehran}
-      AGENT_ID: dev-node-01
-      AGENT_LABELS: env=development,role=dev
-      CONTROLLER_URL: http://controller:8080
-      NATS_URL: nats://nats:4222
-      DOCKER_HOST: unix:///var/run/docker.sock
-      MDNS_ENABLED: "false"
-      METRICS_INTERVAL: "10"
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      # HiveVault Configuration Sync
-      VAULT_SYNC_ENABLED: "true"
-      VAULT_SYNC_INTERVAL: "60"
-      VAULT_NAMESPACES: "/global/,/production/"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:rw
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
-    depends_on:
-      - controller
-      - nats
-    profiles:
-      - agent
-    restart: unless-stopped
+  # agent-dev:
+  #   build:
+  #     context: ./agent
+  #     dockerfile: Dockerfile
+  #   container_name: metalhive-agent-dev
+  #   hostname: xcr9
+  #   # Required for nsenter to access host PID namespace and execute commands on host
+  #   pid: host               # Share host's PID namespace (required for nsenter -t 1)
+  #   privileged: true        # Required for nsenter to enter host namespaces
+  #   environment:
+  #     TZ: ${TZ:-Asia/Tehran}
+  #     AGENT_ID: dev-node-01
+  #     AGENT_LABELS: env=development,role=dev
+  #     CONTROLLER_URL: http://controller:8080
+  #     NATS_URL: nats://nats:4222
+  #     DOCKER_HOST: unix:///var/run/docker.sock
+  #     MDNS_ENABLED: "false"
+  #     METRICS_INTERVAL: "10"
+  #     LOG_LEVEL: ${LOG_LEVEL:-info}
+  #     # HiveVault Configuration Sync
+  #     VAULT_SYNC_ENABLED: "true"
+  #     VAULT_SYNC_INTERVAL: "60"
+  #     VAULT_NAMESPACES: "/global/,/production/"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock:rw
+  #     - /etc/timezone:/etc/timezone:ro
+  #     - /etc/localtime:/etc/localtime:ro
+  #   depends_on:
+  #     - controller
+  #     - nats
+  #   profiles:
+  #     - agent
+  #   restart: unless-stopped
 
   # ===========================================================================
   # Optional: Caddy Reverse Proxy

@@ -8,6 +8,13 @@ import { Header } from "@/components/Header";
 import { DashboardStats } from "@/components/DashboardStats";
 import { AncientReportWidget } from "@/components/AncientReportWidget";
 import { FleetOverview } from "@/components/FleetOverview";
+import { FleetForecastWidget } from "@/components/FleetForecastWidget";
+import { SmartRecommendations } from "@/components/SmartRecommendations";
+import { FleetHealthBar } from "@/components/FleetHealthBar";
+import { LiveMetricsPanel } from "@/components/LiveMetricsPanel";
+import { NodeGridView } from "@/components/NodeGridView";
+import { EventsTimeline } from "@/components/EventsTimeline";
+import { ServerDetailView } from "@/components/ServerDetailView";
 import { fetchNodes } from "@/lib/api";
 
 const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
@@ -44,8 +51,11 @@ const MetricsPanel = dynamic(() => import("@/components/MetricsPanel").then(mod 
 const ProductsPanel = dynamic(() => import("@/components/ProductsPanel").then(mod => mod.ProductsPanel), {
   loading: () => <PanelLoader />,
 });
+const FleetIntelligence = dynamic(() => import("@/components/FleetIntelligence").then(mod => mod.FleetIntelligence), {
+  loading: () => <PanelLoader />,
+});
 
-type ActivePanel = "dashboard" | "nodes" | "containers" | "shell" | "config" | "ai" | "metrics" | "products";
+type ActivePanel = "dashboard" | "nodes" | "containers" | "shell" | "config" | "ai" | "metrics" | "products" | "intelligence";
 
 export default function Home() {
   const [activePanel, setActivePanel] = useState<ActivePanel>("dashboard");
@@ -124,6 +134,9 @@ export default function Home() {
           {activePanel === "products" && (
             <ProductsPanel />
           )}
+          {activePanel === "intelligence" && (
+            <FleetIntelligence selectedNode={selectedNode} />
+          )}
         </main>
       </div>
     </div>
@@ -149,62 +162,40 @@ function DashboardView({
 
       {/* Conditional Content Based on Selection */}
       {selectedNode ? (
-        /* Single Server View - Detailed info for selected node */
-        <div className="space-y-6">
-          {/* Detailed Metrics for Selected Node */}
-          <div className="card">
-            <h2 className="text-lg font-semibold mb-4">
-              📊 Detailed Metrics: {selectedNode}
-            </h2>
-            <MetricsPanel selectedNode={selectedNode} />
-          </div>
-
-          {/* AncientReport for this node */}
-          <AncientReportWidget />
-        </div>
+        /* Single Server View - Enhanced Server Detail */
+        <ServerDetailView 
+          hostname={selectedNode}
+          onBack={() => onNodeChange(null)}
+        />
       ) : (
         /* All Servers View - Fleet-wide overview */
         <div className="space-y-6">
-          {/* Quick Stats */}
-          <DashboardStats onNavigate={onNavigate} />
+          {/* Fleet Health Bar - Top */}
+          <FleetHealthBar />
 
-          {/* Main Content Grid */}
+          {/* Live Metrics + AI Insights Row */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* AncientReport Integration - Takes 2 columns */}
             <div className="xl:col-span-2">
-              <AncientReportWidget />
+              <LiveMetricsPanel />
             </div>
-
-            {/* AI Assistant - Side */}
-            <div className="card h-fit">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                🤖 MetalMind AI
-              </h2>
-              <AIPanel compact />
-            </div>
+            <SmartRecommendations selectedNode={null} />
           </div>
 
-          {/* Fleet Metrics Chart - Disabled for now
-          <div className="card">
-            <h2 className="text-lg font-semibold mb-4">📈 Fleet Metrics</h2>
-            <div className="h-64">
-              <MetricsPanel selectedNode={null} compact />
+          {/* Node Grid + Events Row */}
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="xl:col-span-2">
+              <NodeGridView 
+                selectedNode={selectedNode} 
+                onSelectNode={onNodeChange} 
+              />
             </div>
+            <EventsTimeline limit={8} />
           </div>
-          */}
 
-          {/* Products Quick View */}
-          <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Xcr9 Products</h2>
-              <button 
-                onClick={() => onNavigate("products")}
-                className="btn btn-secondary btn-sm"
-              >
-                View All
-              </button>
-            </div>
-            <ProductsQuickView />
+          {/* AI Forecast Row */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <FleetForecastWidget selectedNode={null} />
+            <AncientReportWidget compact />
           </div>
         </div>
       )}

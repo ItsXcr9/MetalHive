@@ -6,6 +6,7 @@ import { fetchNodes, registerNode, renameNode } from "@/lib/api";
 import { Server, Cpu, HardDrive, MemoryStick, Plus, X, Copy, Check, Terminal, Edit2, ArrowLeft } from "lucide-react";
 import { AddNodeModal } from "./AddNodeModal";
 import { MetricsPanel } from "./MetricsPanel";
+import { NodeAnomalyIndicator } from "./NodeAnomalyIndicator";
 
 const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
 
@@ -374,11 +375,14 @@ function NodeCard({
       </div>
 
       {/* Status */}
-      <div className="flex items-center gap-2 mb-4">
-        <span className={`status-dot ${isOnline ? "status-online" : "status-offline"}`} />
-        <span className={`text-sm ${isOnline ? "text-green-400" : "text-red-400"}`}>
-          {isOnline ? "Online" : "Offline"}
-        </span>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span className={`status-dot ${isOnline ? "status-online" : "status-offline"}`} />
+          <span className={`text-sm ${isOnline ? "text-green-400" : "text-red-400"}`}>
+            {isOnline ? "Online" : "Offline"}
+          </span>
+        </div>
+        {isOnline && <NodeAnomalyIndicator hostname={node.hostname} compact />}
       </div>
 
       {/* Labels */}
