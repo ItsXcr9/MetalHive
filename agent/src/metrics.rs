@@ -44,16 +44,21 @@ pub struct ContainerMetrics {
 
 /// Main metrics collection loop
 pub async fn collection_loop(state: Arc<RwLock<AgentState>>, interval_secs: u64) {
-    let mut sys = System::new_all();
+    // Use System::new() instead of System::new_all() to avoid loading process list
+    // This prevents unbounded memory growth from accumulating dead process entries
+    let mut sys = System::new();
     let mut disks = Disks::new_with_refreshed_list();
     let interval = tokio::time::Duration::from_secs(interval_secs);
     
     info!(interval_secs = interval_secs, "Starting metrics collection loop");
     
     loop {
-        // Refresh system info
-        sys.refresh_all();
-        disks.refresh_list();
+        // Only refresh CPU and memory - NOT processes
+        // refresh_all() causes memory leak by accumulating dead process entries
+        // that are never cleared from the internal HashMap
+        sys.refresh_cpu_all();
+        sys.refresh_memory();
+        disks.refresh();
         
         let state = state.read().await;
         
