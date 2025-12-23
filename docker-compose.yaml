@@ -93,7 +93,7 @@ services:
       - METALHIVE_NATS_URL=nats://nats:4222
       - METALHIVE_CLICKHOUSE_URL=clickhouse:9000
       - METALHIVE_DRAGONFLY_ADDR=dragonfly:6379
-      - ANCIENTREPORT_UI_URL=http://65.109.200.75:6080
+      - ANCIENTREPORT_UI_URL=http://${SERVER_IP:-localhost}:6080
       - METALHIVE_LOG_LEVEL=debug
     depends_on:
       nats:
@@ -124,17 +124,17 @@ services:
       - METALMIND_HOST=0.0.0.0
       - METALMIND_PORT=8081
       - METALMIND_AI_PROVIDER=openai
-      - METALMIND_OPENAI_API_KEY=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
-      - METALMIND_OPENAI_MODEL=gpt-4o-mini
-      - METALMIND_GEMINI_API_KEY=AIzaSyAZOhNPlY5N0M-1yetYR0grC_UN7oNx1Es
+      - METALMIND_OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - METALMIND_OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - METALMIND_GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - METALMIND_GEMINI_MODEL=gemini-2.5-flash-lite
       - METALMIND_NATS_URL=nats://nats:4222
       - METALMIND_CLICKHOUSE_URL=http://clickhouse:8123
       - METALMIND_REDIS_URL=redis://dragonfly:6379
       - METALMIND_CONTROLLER_URL=http://controller:8080
       # External APIs - use server IP for access
-      - METALMIND_ANCIENTREPORT_API_URL=http://65.109.200.75:6080
-      - METALMIND_MITHRILLOG_API_URL=http://65.109.200.75:9900
+      - METALMIND_ANCIENTREPORT_API_URL=http://${SERVER_IP:-localhost}:6080
+      - METALMIND_MITHRILLOG_API_URL=http://${SERVER_IP:-localhost}:9900
       - METALMIND_LOG_LEVEL=debug
     depends_on:
       nats:
@@ -146,18 +146,18 @@ services:
       context: ./ui
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=http://65.109.200.75:8080
-        - NEXT_PUBLIC_WS_URL=ws://65.109.200.75:8080
-        - NEXT_PUBLIC_ANCIENTREPORT_API=http://65.109.200.75:6080
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+        - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:8080}
+        - NEXT_PUBLIC_ANCIENTREPORT_API=${NEXT_PUBLIC_ANCIENTREPORT_API:-http://localhost:6080}
     container_name: metalhive-ui
     ports:
       - "3002:3000"   # Changed to 3002 to avoid conflict
     environment:
-      - UI_USERNAME=saeed
-      - UI_PASSWORD=saeed
-      - NEXT_PUBLIC_API_URL=http://65.109.200.75:8080
-      - NEXT_PUBLIC_WS_URL=ws://65.109.200.75:8080
-      - NEXT_PUBLIC_ANCIENTREPORT_API=http://65.109.200.75:6080
+      - UI_USERNAME=${UI_USERNAME:-admin}
+      - UI_PASSWORD=${UI_PASSWORD:-admin}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:8080}
+      - NEXT_PUBLIC_ANCIENTREPORT_API=${NEXT_PUBLIC_ANCIENTREPORT_API:-http://localhost:6080}
     depends_on:
       - controller
     restart: unless-stopped

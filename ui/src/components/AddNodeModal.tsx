@@ -35,7 +35,7 @@ export function AddNodeModal({ isOpen, onClose, onSuccess }: AddNodeModalProps) 
   const [showPassword, setShowPassword] = useState(false);
   const [authMethod, setAuthMethod] = useState<"password" | "key">("password");
   const [privateKey, setPrivateKey] = useState("");
-  const [centralIp, setCentralIp] = useState("65.109.200.75");
+  const [centralIp, setCentralIp] = useState("");
   
   const [testing, setTesting] = useState(false);
   const [deploying, setDeploying] = useState(false);

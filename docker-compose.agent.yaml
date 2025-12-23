@@ -24,9 +24,9 @@ services:
     environment:
       TZ: ${TZ:-Asia/Tehran}
 
-      CONTROLLER_URL: http://65.109.200.75:8080
-      HIVE_CONTROLLER: http://65.109.200.75:8080
-      NATS_URL: nats://${CENTRAL_SERVER_IP:-65.109.200.75}:4223
+      CONTROLLER_URL: http://${CENTRAL_SERVER_IP:-localhost}:8080
+      HIVE_CONTROLLER: http://${CENTRAL_SERVER_IP:-localhost}:8080
+      NATS_URL: nats://${CENTRAL_SERVER_IP:-localhost}:4223
 
       AGENT_ID: ${AGENT_ID:-30}
       AGENT_LABELS: ${AGENT_LABELS:-main}
@@ -48,6 +48,6 @@ services:
     logging:
       driver: syslog
       options:
-        syslog-address: "udp://65.109.200.75:1555"
+        syslog-address: "udp://${CENTRAL_SERVER_IP:-localhost}:1555"
         syslog-facility: "daemon"
         tag: "metalhive-agent"

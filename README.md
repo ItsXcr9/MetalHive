@@ -171,17 +171,36 @@ AI_PORT=8081
 NEXT_PUBLIC_API_URL=http://localhost:8080
 ```
 
-## License
+## License & Enterprise
 
-Apache 2.0 - See [LICENSE](LICENSE)
+This software is licensed under the **Xcr9 Community License** - See [LICENSE](LICENSE)
 
-## Part of Xcr9
+- ✅ **Free** for personal and non-commercial use
+- ✅ **Free** for small teams (up to 5 nodes)
+- 🏢 **Enterprise License** required for commercial use with more than 5 nodes
 
-MetalHive is the third product in the Xcr9 AI infrastructure suite:
+### Get Enterprise License
 
-- **MithrilLog** — AI-powered log management
-- **AncientReport** — Autonomous observability (eBPF)
-- **MetalHive** — Bare-metal Docker orchestration
+Visit **[xcr9.site/pricing](https://xcr9.site/pricing.html)** to purchase an Enterprise license which includes:
+
+- Unlimited nodes
+- Priority support
+- Custom integrations
+- SLA guarantees
+- Professional services
+
+## Part of Xcr9 Platform
+
+MetalHive is the third product in the [Xcr9](https://xcr9.site) AI infrastructure suite:
+
+- **[MithrilLog](https://xcr9.site/mithrillog.html)** — AI-powered log management
+- **[AncientReport](https://xcr9.site/ancientreport.html)** — Autonomous observability (eBPF)
+- **[MetalHive](https://xcr9.site/metalhive.html)** — Bare-metal Docker orchestration
+
+### Contact
+
+- 🌐 Website: [xcr9.site](https://xcr9.site)
+- 📧 Sales: [xcr9.site/contact](https://xcr9.site/contact.html)
 
 ---
 

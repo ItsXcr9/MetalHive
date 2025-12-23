@@ -43,7 +43,7 @@ export function InstallAgentModal({ isOpen, onClose, onSuccess, productName = "A
   const [showPassword, setShowPassword] = useState(false);
   const [authMethod, setAuthMethod] = useState<"password" | "key">("password");
   const [privateKey, setPrivateKey] = useState("");
-  const [centralIp, setCentralIp] = useState("65.109.200.75");
+  const [centralIp, setCentralIp] = useState("");
   
   // Node mode state
   const [selectedNode, setSelectedNode] = useState("");

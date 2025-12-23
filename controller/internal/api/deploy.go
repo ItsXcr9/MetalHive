@@ -61,7 +61,7 @@ func (h *Handler) DeployAgent(c *fiber.Ctx) error {
 		req.Port = 22
 	}
 	if req.CentralIP == "" {
-		req.CentralIP = "65.109.200.75"
+		req.CentralIP = os.Getenv("SERVER_IP")
 	}
 	if req.NATSPort == 0 {
 		req.NATSPort = 4222
