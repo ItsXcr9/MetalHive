@@ -11,7 +11,7 @@ import {
   RefreshCw
 } from "lucide-react";
 
-const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
+const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://65.109.200.75:6800";
 
 interface Recommendation {
   type: "warning" | "optimization" | "info" | "success";

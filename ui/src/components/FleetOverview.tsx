@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Server, Cpu, MemoryStick, HardDrive, CheckCircle, AlertTriangle, XCircle, RefreshCw, Loader2, Sparkles, TrendingUp } from "lucide-react";
 
-const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
+const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://65.109.200.75:6800";
 const CONTROLLER_API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 interface ServerInfo {

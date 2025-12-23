@@ -21,7 +21,7 @@ WORKDIR /app
 # Build arguments for Next.js public environment variables
 ARG NEXT_PUBLIC_API_URL=http://localhost:8080
 ARG NEXT_PUBLIC_WS_URL=ws://localhost:8080
-ARG NEXT_PUBLIC_ANCIENTREPORT_API=http://localhost:8800
+ARG NEXT_PUBLIC_ANCIENTREPORT_API=http://65.109.200.75:6800
 
 # Set environment variables for build (baked into the bundle)
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL

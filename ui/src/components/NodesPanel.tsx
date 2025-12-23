@@ -8,7 +8,7 @@ import { AddNodeModal } from "./AddNodeModal";
 import { MetricsPanel } from "./MetricsPanel";
 import { NodeAnomalyIndicator } from "./NodeAnomalyIndicator";
 
-const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
+const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://65.109.200.75:6800";
 
 interface ServerInfo {
   cpu_cores: number;

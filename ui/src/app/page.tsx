@@ -17,7 +17,7 @@ import { EventsTimeline } from "@/components/EventsTimeline";
 import { ServerDetailView } from "@/components/ServerDetailView";
 import { fetchNodes } from "@/lib/api";
 
-const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://localhost:8800";
+const METRICS_API = process.env.NEXT_PUBLIC_ANCIENTREPORT_API || "http://65.109.200.75:6800";
 
 // Loading component for dynamic chunks
 const PanelLoader = () => (
