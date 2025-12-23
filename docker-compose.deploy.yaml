@@ -1,0 +1,167 @@
+# =============================================================================
+# MetalHive Docker Compose - DEPLOY VERSION (pulls from ghcr.io)
+# =============================================================================
+# Use this file to deploy without needing source files!
+# Pull images: docker compose -f docker-compose.deploy.yaml pull
+# Start:       docker compose -f docker-compose.deploy.yaml up -d
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Infrastructure Services
+  # ===========================================================================
+  
+  nats:
+    image: nats:2.10-alpine
+    container_name: metalhive-nats
+    command: 
+      - "--jetstream"
+    ports:
+      - "4223:4222"
+      - "127.0.0.1:8223:8222"
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: metalhive-clickhouse
+    ports:
+      - "127.0.0.1:8124:8123"
+      - "127.0.0.1:9001:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      TZ: Asia/Tehran
+      CLICKHOUSE_DB: metalhive
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    restart: unless-stopped
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: metalhive-dragonfly
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - dragonfly-data:/data
+    command: 
+      - "--maxmemory=512mb"
+      - "--proactor_threads=2"
+      - "--dir=/data"
+      - "--dbfilename=dump"
+      - "--snapshot_cron=* * * * *"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ===========================================================================
+  # MetalHive Services (from ghcr.io)
+  # ===========================================================================
+
+  controller:
+    image: ghcr.io/itsxcr9/metalhive/controller:latest
+    container_name: metalhive-controller
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/metalhive/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home:/home:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Asia/Tehran
+      - METALHIVE_SERVER_HOST=0.0.0.0
+      - METALHIVE_SERVER_PORT=8080
+      - METALHIVE_NATS_URL=nats://nats:4222
+      - METALHIVE_CLICKHOUSE_URL=clickhouse:9000
+      - METALHIVE_DRAGONFLY_ADDR=dragonfly:6379
+      - ANCIENTREPORT_UI_URL=${ANCIENTREPORT_UI_URL:-http://localhost:6080}
+      - METALHIVE_LOG_LEVEL=info
+    depends_on:
+      nats:
+        condition: service_healthy
+      dragonfly:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  ai:
+    image: ghcr.io/itsxcr9/metalhive/ai:latest
+    container_name: metalhive-ai
+    ports:
+      - "8082:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Asia/Tehran
+      - METALMIND_HOST=0.0.0.0
+      - METALMIND_PORT=8081
+      - METALMIND_AI_PROVIDER=${AI_PROVIDER:-openai}
+      - METALMIND_OPENAI_API_KEY=${OPENAI_API_KEY}
+      - METALMIND_OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - METALMIND_GEMINI_API_KEY=${GEMINI_API_KEY}
+      - METALMIND_GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash-lite}
+      - METALMIND_NATS_URL=nats://nats:4222
+      - METALMIND_CLICKHOUSE_URL=http://clickhouse:8123
+      - METALMIND_REDIS_URL=redis://dragonfly:6379
+      - METALMIND_CONTROLLER_URL=http://controller:8080
+      - METALMIND_ANCIENTREPORT_API_URL=${ANCIENTREPORT_API_URL:-http://localhost:6080}
+      - METALMIND_MITHRILLOG_API_URL=${MITHRILLOG_API_URL:-http://localhost:9900}
+      - METALMIND_LOG_LEVEL=info
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ui:
+    image: ghcr.io/itsxcr9/metalhive/ui:latest
+    container_name: metalhive-ui
+    ports:
+      - "3002:3000"
+    environment:
+      - UI_USERNAME=${UI_USERNAME:-admin}
+      - UI_PASSWORD=${UI_PASSWORD:-admin}
+      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:8080}
+      - NEXT_PUBLIC_WS_URL=${WS_URL:-ws://localhost:8080}
+      - NEXT_PUBLIC_ANCIENTREPORT_API=${ANCIENTREPORT_API:-http://localhost:6080}
+    depends_on:
+      - controller
+    restart: unless-stopped
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+volumes:
+  nats-data:
+    name: metalhive-nats-data
+  clickhouse-data:
+    name: metalhive-clickhouse-data
+  dragonfly-data:
+    name: metalhive-dragonfly-data
+
+# =============================================================================
+# Networks
+# =============================================================================
+
+networks:
+  default:
+    name: metalhive-network
